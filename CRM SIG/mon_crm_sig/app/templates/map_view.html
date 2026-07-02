@@ -463,7 +463,9 @@
                     return;
                 }
                 if (data.couches_a_completer && data.couches_a_completer.length) {
-                    ouvrirNomenclature(data.couches_a_completer, data);
+                    // Mémoriser le modal câbles pour l'enchaîner APRÈS la nomenclature
+                    cablesApresNomenclature = !!(data.cables_vides && data.peut_generer_cables);
+                    ouvrirNomenclature(data.couches_a_completer);
                 } else if (data.cables_vides && data.peut_generer_cables) {
                     document.getElementById('modal-cables-apd').classList.remove('hidden');
                 } else {
@@ -497,6 +499,20 @@
     }
 
     // ===== PROPOSITIONS DE NOMENCLATURE (champs vides à l'import) =====
+    // Si l'import a AUSSI détecté une couche CABLES vide (étude APD FO), on doit
+    // proposer la génération de câbles APRÈS la nomenclature — pas l'oublier.
+    let cablesApresNomenclature = false;
+
+    function suiteApresNomenclature() {
+        document.getElementById('modal-nomenclature').classList.add('hidden');
+        if (cablesApresNomenclature) {
+            cablesApresNomenclature = false;
+            document.getElementById('modal-cables-apd').classList.remove('hidden');
+        } else {
+            window.location.href = '/map/' + projetId;
+        }
+    }
+
     function ouvrirNomenclature(couches) {
         const cont = document.getElementById('nomen-contenu');
         cont.innerHTML = '<p class="text-slate-400">Analyse de la nomenclature…</p>';
@@ -543,8 +559,7 @@
         });
     }
     function ignorerNomenclature() {
-        document.getElementById('modal-nomenclature').classList.add('hidden');
-        window.location.href = '/map/' + projetId;
+        suiteApresNomenclature();
     }
     function appliquerNomenclature() {
         const btn = document.getElementById('btn-nomen-appliquer');
@@ -568,8 +583,8 @@
             }
         });
         Promise.all(taches)
-            .then(() => { window.location.href = '/map/' + projetId; })
-            .catch(err => { alert('Erreur nomenclature : ' + err); window.location.href = '/map/' + projetId; });
+            .then(() => { suiteApresNomenclature(); })
+            .catch(err => { alert('Erreur nomenclature : ' + err); suiteApresNomenclature(); });
     }
 
     // ===== GENERATION PDF =====
