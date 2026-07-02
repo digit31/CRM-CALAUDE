@@ -56,13 +56,70 @@
         
         /* Gradient sidebar */
         .sidebar-gradient { background: linear-gradient(180deg, #134e4a 0%, #042f2e 100%); }
+
+        /* ===================================================================
+           TRANSITIONS ENTRE LES PAGES
+           - Navigateurs modernes (Chrome/Edge) : View Transitions API
+             cross-document -> fondu fluide, sidebar/header stables,
+             seul le contenu glisse.
+           - Autres navigateurs : animation d'entrée CSS (fallback .no-vt).
+           =================================================================== */
+        @view-transition { navigation: auto; }
+
+        /* Zones épinglées : snapshots appariés entre les deux pages,
+           la sidebar et le header restent visuellement stables. */
+        #app-sidebar  { view-transition-name: sidebar; }
+        #app-topbar   { view-transition-name: topbar; }
+        #page-content { view-transition-name: page-content; }
+
+        /* Contenu : sortie discrète, entrée en fondu + léger glissement */
+        ::view-transition-old(page-content) { animation: vtSortie 0.14s ease-in both; }
+        ::view-transition-new(page-content) { animation: vtEntree 0.30s cubic-bezier(0.22, 1, 0.36, 1) both; }
+        ::view-transition-old(root) { animation: vtFonduSortie 0.14s ease-in both; }
+        ::view-transition-new(root) { animation: vtFonduEntree 0.20s ease-out both; }
+
+        @keyframes vtSortie      { to   { opacity: 0; transform: translateY(6px); } }
+        @keyframes vtEntree      { from { opacity: 0; transform: translateY(12px); } }
+        @keyframes vtFonduSortie { to   { opacity: 0; } }
+        @keyframes vtFonduEntree { from { opacity: 0; } }
+
+        /* Fallback : navigateurs sans View Transitions (classe .no-vt posée en JS) */
+        .no-vt #page-content { animation: pageEntree 0.32s cubic-bezier(0.22, 1, 0.36, 1) both; }
+        @keyframes pageEntree { from { opacity: 0; transform: translateY(10px); } }
+
+        /* Barre de progression de navigation (feedback pendant le chargement) */
+        #nav-progress {
+            position: fixed; top: 0; left: 0; height: 2.5px; width: 0;
+            z-index: 9999; opacity: 0; pointer-events: none;
+            background: linear-gradient(90deg, #0d9488, #2dd4bf, #5eead4);
+            box-shadow: 0 0 8px rgba(20, 184, 166, 0.55);
+        }
+        #nav-progress.actif { opacity: 1; animation: navProgression 2.5s cubic-bezier(0.1, 0.6, 0.3, 1) forwards; }
+        @keyframes navProgression { 0% { width: 0; } 55% { width: 68%; } 100% { width: 92%; } }
+
+        /* Accessibilité : réduire les animations si demandé par l'OS */
+        @media (prefers-reduced-motion: reduce) {
+            ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
+            .no-vt #page-content { animation: none; }
+            #nav-progress { display: none; }
+        }
     </style>
+    <script>
+        // Fallback : si le navigateur ne gère pas les View Transitions,
+        // on active l'animation d'entrée CSS classique.
+        if (!("startViewTransition" in document)) {
+            document.documentElement.classList.add("no-vt");
+        }
+    </script>
     {% block head_extra %}{% endblock %}
 </head>
 <body class="bg-slate-50 text-slate-800 font-sans antialiased flex h-screen overflow-hidden">
-    
+
+    <!-- Barre de progression de navigation -->
+    <div id="nav-progress"></div>
+
     <!-- ============ SIDEBAR ============ -->
-    <aside class="w-64 sidebar-gradient text-white flex flex-col shadow-2xl z-20">
+    <aside id="app-sidebar" class="w-64 sidebar-gradient text-white flex flex-col shadow-2xl z-20">
         <!-- Logo -->
         <div class="p-5 border-b border-brand-800/50">
             <div class="flex items-center gap-3">
@@ -149,7 +206,7 @@
     <!-- ============ MAIN CONTENT ============ -->
     <main class="flex-1 flex flex-col h-screen overflow-hidden">
         <!-- Header -->
-        <header class="bg-white shadow-sm z-10 px-6 py-3.5 flex justify-between items-center border-b border-slate-200">
+        <header id="app-topbar" class="bg-white shadow-sm z-10 px-6 py-3.5 flex justify-between items-center border-b border-slate-200">
             <h2 class="text-lg font-semibold text-slate-700 flex items-center gap-2">
                 {% block header_title %}Accueil{% endblock %}
             </h2>
@@ -162,11 +219,29 @@
         </header>
         
         <!-- Page Content -->
-        <div class="flex-1 overflow-auto p-6">
+        <div id="page-content" class="flex-1 overflow-auto p-6">
             {% block content %}{% endblock %}
         </div>
     </main>
 
+    <script>
+        // Barre de progression : lancée au clic sur un lien interne
+        // (feedback visuel pendant le chargement de la page suivante).
+        document.addEventListener('click', function (e) {
+            const a = e.target.closest('a[href]');
+            if (!a || a.target === '_blank' || a.hasAttribute('download')) return;
+            if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || e.button !== 0) return;
+            let url;
+            try { url = new URL(a.href, location.href); } catch (_) { return; }
+            if (url.origin !== location.origin) return;                       // lien externe
+            if (url.pathname === location.pathname && url.hash) return;       // ancre interne
+            document.getElementById('nav-progress').classList.add('actif');
+        });
+        // Réinitialiser la barre (retour bfcache inclus)
+        window.addEventListener('pageshow', function () {
+            document.getElementById('nav-progress').classList.remove('actif');
+        });
+    </script>
     {% block scripts_extra %}{% endblock %}
 </body>
 </html>
