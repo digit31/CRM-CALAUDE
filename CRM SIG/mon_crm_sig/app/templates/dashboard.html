@@ -1,0 +1,305 @@
+{% extends "base.html" %}
+
+{% block header_title %}
+<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-brand-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+</svg>
+Tableau de Bord
+{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto">
+    <!-- ============ CARTES STATISTIQUES ============ -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-5 mb-8">
+        <!-- Total Projets -->
+        <div class="bg-white rounded-xl shadow-sm p-5 border border-slate-100 card-hover">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Projets</p>
+                    <p class="text-3xl font-bold text-slate-900 mt-1">{{ projets|length }}</p>
+                </div>
+                <div class="w-11 h-11 bg-brand-50 rounded-xl flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-brand-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                    </svg>
+                </div>
+            </div>
+        </div>
+        <!-- En cours -->
+        <div class="bg-white rounded-xl shadow-sm p-5 border border-slate-100 card-hover">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">En cours</p>
+                    <p class="text-3xl font-bold text-blue-600 mt-1">{{ projets|selectattr("statut", "equalto", "En cours")|list|length }}</p>
+                </div>
+                <div class="w-11 h-11 bg-blue-50 rounded-xl flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                </div>
+            </div>
+        </div>
+        <!-- Terminés -->
+        <div class="bg-white rounded-xl shadow-sm p-5 border border-slate-100 card-hover">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Terminés</p>
+                    <p class="text-3xl font-bold text-emerald-600 mt-1">{{ projets|selectattr("statut", "equalto", "Terminé")|list|length }}</p>
+                </div>
+                <div class="w-11 h-11 bg-emerald-50 rounded-xl flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                </div>
+            </div>
+        </div>
+        <!-- Bouton Nouveau Projet -->
+        <div class="bg-gradient-to-br from-brand-500 to-brand-700 rounded-xl shadow-sm p-5 card-hover cursor-pointer text-white"
+             onclick="document.getElementById('modal-nouveau-projet').classList.remove('hidden')">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-xs font-semibold text-brand-200 uppercase tracking-wider">Action</p>
+                    <p class="text-lg font-bold mt-1">+ Nouveau Projet</p>
+                </div>
+                <div class="w-11 h-11 bg-white/20 rounded-xl flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+                    </svg>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============ TABLEAU DES PROJETS ============ -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
+            <h3 class="text-base font-semibold text-slate-800">Affaires / Projets</h3>
+            <button onclick="document.getElementById('modal-nouveau-client').classList.remove('hidden')"
+                    class="text-xs bg-slate-100 text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-200 transition font-medium">
+                + Nouveau Client
+            </button>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left">
+                <thead>
+                    <tr class="bg-slate-50/80 text-slate-500 text-xs uppercase tracking-wider">
+                        <th class="px-6 py-3.5 font-semibold">Réf.</th>
+                        <th class="px-6 py-3.5 font-semibold">Nom du Projet</th>
+                        <th class="px-6 py-3.5 font-semibold">Client</th>
+                        <th class="px-6 py-3.5 font-semibold">Statut</th>
+                        <th class="px-6 py-3.5 font-semibold">Couches SIG</th>
+                        <th class="px-6 py-3.5 font-semibold">Date</th>
+                        <th class="px-6 py-3.5 font-semibold text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    {% for projet in projets %}
+                    <tr class="hover:bg-slate-50/50 transition-colors group">
+                        <td class="px-6 py-4 text-xs font-mono text-slate-400">{{ projet.reference or ("#%04d" % projet.id) }}</td>
+                        <td class="px-6 py-4">
+                            <p class="font-semibold text-slate-900 text-sm">{{ projet.nom }}</p>
+                            {% if projet.description %}
+                            <p class="text-xs text-slate-400 mt-0.5 truncate max-w-xs">{{ projet.description }}</p>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 text-sm text-slate-500">{{ projet.client.nom if projet.client else "—" }}</td>
+                        <td class="px-6 py-4">
+                            {% if projet.statut == "Nouveau" %}
+                            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-violet-100 text-violet-700">Nouveau</span>
+                            {% elif projet.statut == "En cours" %}
+                            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">En cours</span>
+                            {% elif projet.statut == "Terminé" %}
+                            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">Terminé</span>
+                            {% elif projet.statut == "Archivé" %}
+                            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600">Archivé</span>
+                            {% else %}
+                            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600">{{ projet.statut }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4">
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-600">
+                                {{ projet.couches|length }} couche{{ "s" if projet.couches|length != 1 else "" }}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 text-sm text-slate-400">{{ projet.date_creation.strftime('%d/%m/%Y') }}</td>
+                        <td class="px-6 py-4 text-right">
+                            <div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <!-- Vue Carte -->
+                                <a href="/map/{{ projet.id }}" class="inline-flex items-center px-3 py-1.5 text-xs font-semibold rounded-lg text-white bg-brand-600 hover:bg-brand-700 transition shadow-sm" title="Ouvrir la carte SIG">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                                    </svg>
+                                    Carte
+                                </a>
+                                <!-- Changer Statut -->
+                                <div class="relative">
+                                    <select onchange="changerStatut({{ projet.id }}, this.value)"
+                                            class="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-slate-600 cursor-pointer focus:ring-1 focus:ring-brand-500">
+                                        <option value="" disabled selected>Statut</option>
+                                        <option value="Nouveau">Nouveau</option>
+                                        <option value="En cours">En cours</option>
+                                        <option value="Terminé">Terminé</option>
+                                        <option value="Archivé">Archivé</option>
+                                    </select>
+                                </div>
+                                <!-- Supprimer -->
+                                <button onclick="supprimerProjet({{ projet.id }}, '{{ projet.nom }}')"
+                                        class="p-1.5 text-slate-300 hover:text-red-500 transition rounded-lg hover:bg-red-50" title="Supprimer">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="7" class="px-6 py-12 text-center">
+                            <div class="flex flex-col items-center gap-3">
+                                <div class="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                </div>
+                                <p class="text-sm text-slate-500">Aucun projet. Créez votre première affaire !</p>
+                                <button onclick="document.getElementById('modal-nouveau-projet').classList.remove('hidden')"
+                                        class="px-4 py-2 bg-brand-600 text-white text-sm font-medium rounded-lg hover:bg-brand-700 transition">
+                                    Créer un Projet
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- ============ MODAL : NOUVEAU PROJET ============ -->
+<div id="modal-nouveau-projet" class="fixed inset-0 glass-bg hidden z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg animate-fadeIn">
+        <div class="p-6 border-b border-slate-100">
+            <div class="flex justify-between items-center">
+                <h3 class="text-xl font-bold text-slate-900">Créer une Nouvelle Affaire</h3>
+                <button onclick="document.getElementById('modal-nouveau-projet').classList.add('hidden')"
+                        class="p-1 hover:bg-slate-100 rounded-lg transition">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            <p class="text-sm text-slate-500 mt-1">Un dossier sera automatiquement créé sur votre disque avec les sous-dossiers standards.</p>
+        </div>
+        <form action="/api/projets" method="POST" class="p-6 space-y-5">
+            <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1.5">Nom du projet *</label>
+                <input type="text" name="nom" required
+                       class="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition"
+                       placeholder="Ex: Raccordement Fibre ZAC Nord">
+            </div>
+            <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1.5">Description</label>
+                <textarea name="description" rows="3"
+                          class="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition resize-none"
+                          placeholder="Décrivez brièvement l'affaire..."></textarea>
+            </div>
+            <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1.5">Client</label>
+                <select name="client_id"
+                        class="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition bg-white">
+                    <option value="">— Aucun client —</option>
+                    {% for client in clients %}
+                    <option value="{{ client.id }}">{{ client.nom }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="flex justify-end gap-3 pt-2">
+                <button type="button" onclick="document.getElementById('modal-nouveau-projet').classList.add('hidden')"
+                        class="px-5 py-2.5 bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-200 transition text-sm font-medium">
+                    Annuler
+                </button>
+                <button type="submit"
+                        class="px-5 py-2.5 bg-brand-600 text-white rounded-xl hover:bg-brand-700 transition text-sm font-semibold shadow-sm">
+                    Créer le Projet
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ============ MODAL : NOUVEAU CLIENT ============ -->
+<div id="modal-nouveau-client" class="fixed inset-0 glass-bg hidden z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md animate-fadeIn">
+        <div class="p-6 border-b border-slate-100">
+            <div class="flex justify-between items-center">
+                <h3 class="text-xl font-bold text-slate-900">Nouveau Client</h3>
+                <button onclick="document.getElementById('modal-nouveau-client').classList.add('hidden')"
+                        class="p-1 hover:bg-slate-100 rounded-lg transition">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <form action="/api/clients" method="POST" class="p-6 space-y-4">
+            <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1.5">Nom *</label>
+                <input type="text" name="nom" required
+                       class="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition"
+                       placeholder="Ex: Orange, SFR, Mairie de Lyon...">
+            </div>
+            <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1.5">Email</label>
+                <input type="email" name="email"
+                       class="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition"
+                       placeholder="contact@client.fr">
+            </div>
+            <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1.5">Téléphone</label>
+                <input type="tel" name="telephone"
+                       class="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition"
+                       placeholder="06 XX XX XX XX">
+            </div>
+            <div class="flex justify-end gap-3 pt-2">
+                <button type="button" onclick="document.getElementById('modal-nouveau-client').classList.add('hidden')"
+                        class="px-5 py-2.5 bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-200 transition text-sm font-medium">
+                    Annuler
+                </button>
+                <button type="submit"
+                        class="px-5 py-2.5 bg-brand-600 text-white rounded-xl hover:bg-brand-700 transition text-sm font-semibold shadow-sm">
+                    Enregistrer
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+    // Changer le statut d'un projet via un formulaire caché
+    function changerStatut(projetId, nouveauStatut) {
+        if (!nouveauStatut) return;
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/api/projets/' + projetId + '/statut';
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'statut';
+        input.value = nouveauStatut;
+        form.appendChild(input);
+        document.body.appendChild(form);
+        form.submit();
+    }
+
+    // Supprimer un projet avec confirmation
+    function supprimerProjet(projetId, nomProjet) {
+        if (confirm('Voulez-vous vraiment supprimer le projet "' + nomProjet + '" ?\n\nLe dossier physique ne sera PAS supprimé.')) {
+            fetch('/api/projets/' + projetId, { method: 'DELETE' })
+                .then(r => { if (r.ok) window.location.reload(); })
+                .catch(err => alert('Erreur : ' + err));
+        }
+    }
+</script>
+{% endblock %}

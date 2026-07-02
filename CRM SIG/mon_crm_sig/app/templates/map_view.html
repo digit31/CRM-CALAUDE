@@ -1,0 +1,930 @@
+{% extends "base.html" %}
+
+{% block nav_dashboard_class %}text-brand-300 hover:bg-white/10{% endblock %}
+{% block nav_map_class %}bg-white/10 text-white shadow-sm{% endblock %}
+
+{% block head_extra %}
+<!-- Leaflet CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+<style>
+    #map { height: 100%; width: 100%; border-radius: 0.75rem; }
+    
+    /* Style du panneau d'upload par drag & drop */
+    .drop-zone { border: 2px dashed #cbd5e1; transition: all 0.2s; }
+    .drop-zone.drag-over { border-color: #14b8a6; background: #f0fdfa; }
+</style>
+{% endblock %}
+
+{% block header_title %}
+<a href="/" class="text-slate-400 hover:text-brand-600 transition mr-2">
+    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+    </svg>
+</a>
+<span class="text-sm text-slate-400 mr-2">{{ projet.reference }}</span>
+<span class="font-semibold">{{ projet.nom }}</span>
+<span class="ml-3">
+    {% if projet.statut == "Nouveau" %}
+    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-violet-100 text-violet-700">{{ projet.statut }}</span>
+    {% elif projet.statut == "En cours" %}
+    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">{{ projet.statut }}</span>
+    {% elif projet.statut == "Terminé" %}
+    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">{{ projet.statut }}</span>
+    {% else %}
+    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600">{{ projet.statut }}</span>
+    {% endif %}
+</span>
+{% endblock %}
+
+{% block content %}
+<div class="flex flex-col lg:flex-row h-full gap-4" style="height: calc(100vh - 120px);">
+    
+    <!-- ============ PANNEAU LATÉRAL SIG ============ -->
+    <div class="w-full lg:w-80 bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col overflow-hidden flex-shrink-0">
+        
+        <!-- En-tête du panneau -->
+        <div class="p-4 border-b border-slate-100 bg-slate-50/80">
+            <h3 class="font-semibold text-slate-800 text-sm flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-brand-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+                Couches SIG
+                <span class="ml-auto text-xs font-medium text-slate-400">{{ projet.couches|length }}</span>
+            </h3>
+        </div>
+        
+        <!-- Zone d'import Shapefile -->
+        <div class="p-3 border-b border-slate-100">
+            <form id="form-upload" action="/api/projets/{{ projet.id }}/upload-shp" method="POST" enctype="multipart/form-data">
+                <div id="drop-zone" class="drop-zone rounded-xl p-4 text-center cursor-pointer"
+                     onclick="document.getElementById('file-input').click()">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mx-auto text-slate-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                    <p class="text-xs text-slate-500 font-medium">Glissez vos fichiers .shp ici</p>
+                    <p class="text-xs text-slate-400 mt-1">ou cliquez pour parcourir</p>
+                    <p id="file-names" class="text-xs text-brand-600 font-semibold mt-2 hidden"></p>
+                </div>
+                <input type="file" id="file-input" name="fichiers" class="hidden" accept=".shp,.dbf,.shx,.prj,.cpg" multiple>
+                <button type="submit" id="btn-upload" class="w-full mt-2 bg-brand-600 text-white py-2 px-4 rounded-lg text-xs font-semibold hover:bg-brand-700 transition shadow-sm hidden">
+                    Importer les fichiers
+                </button>
+            </form>
+        </div>
+        
+        <!-- Action rapide Livrables -->
+        <div class="p-3 border-b border-slate-100 {% if not shp_genere %}bg-amber-50/50{% else %}bg-slate-50{% endif %} flex flex-col gap-1.5">
+            <span class="text-[10px] font-bold {% if not shp_genere %}text-amber-800{% else %}text-slate-500{% endif %} uppercase tracking-wider">
+                {% if not shp_genere %}Livrables Manquants{% else %}Gestion des Livrables{% endif %}
+            </span>
+            <button onclick="creerShpDepuisIci()" id="btn-creer-shp-ici" class="w-full {% if not shp_genere %}bg-brand-600 hover:bg-brand-700{% else %}bg-slate-600 hover:bg-slate-700{% endif %} text-white font-bold py-2 px-3 rounded-lg text-xs flex items-center justify-center gap-1.5 shadow-sm transition transform active:scale-95">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    {% if not shp_genere %}
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0" />
+                    {% else %}
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 8H18.5" />
+                    {% endif %}
+                </svg>
+                <span id="btn-shp-label">{% if not shp_genere %}Créer les SHP (Livrables){% else %}Régénérer SHP Livrables{% endif %}</span>
+            </button>
+        </div>
+
+        <!-- Liste des couches -->
+        <div class="flex-1 overflow-y-auto p-3 space-y-2" id="layers-list">
+            {% for couche in projet.couches %}
+            <div class="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-200 hover:border-brand-300 transition group"
+                 data-couche-id="{{ couche.id }}">
+                <div class="flex items-center gap-3">
+                    <input type="checkbox" checked
+                           class="layer-toggle w-4 h-4 text-brand-600 rounded border-slate-300 focus:ring-brand-500 cursor-pointer"
+                           data-couche-id="{{ couche.id }}"
+                           data-couleur="{{ couche.couleur }}">
+                    <div>
+                        <p class="text-sm font-semibold text-slate-800">{{ couche.nom }}</p>
+                        <p class="text-xs text-slate-400 mt-0.5">
+                            {{ couche.type_geometrie }} &bull; {{ couche.nb_entites }} entités
+                            &bull; EPSG:{{ couche.systeme_projection }}
+                        </p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button onclick="chargerAttributs({{ couche.id }})" class="text-slate-400 hover:text-brand-600 transition" title="Voir la table attributaire">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                    </button>
+                    <div class="w-3 h-3 rounded-full flex-shrink-0" style="background-color: {{ couche.couleur }}"></div>
+                </div>
+            </div>
+            {% else %}
+            <div id="empty-layers" class="text-center p-6">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 mx-auto text-slate-200 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                </svg>
+                <p class="text-xs text-slate-400">Aucune couche chargée.</p>
+                <p class="text-xs text-slate-400">Importez un Shapefile ci-dessus.</p>
+            </div>
+            {% endfor %}
+        </div>
+        
+
+    </div>
+    
+    <!-- ============ ZONE PRINCIPALE (ONGLETS) ============ -->
+    <div class="flex-1 flex flex-col gap-2 overflow-hidden">
+        
+        <!-- Navigation des onglets -->
+        <div class="flex gap-2 p-1 bg-slate-100/80 rounded-lg w-max border border-slate-200">
+            <button onclick="switchTab('map-tab')" id="btn-map-tab" class="px-5 py-2 text-sm font-semibold rounded-md bg-white text-brand-700 shadow-sm transition">
+                <div class="flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                    </svg>
+                    Carte Interactive
+                </div>
+            </button>
+            <button onclick="switchTab('table-tab')" id="btn-table-tab" class="px-5 py-2 text-sm font-semibold rounded-md text-slate-500 hover:text-slate-700 transition">
+                <div class="flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    Données Inputs
+                </div>
+            </button>
+            {% if shp_genere %}
+            <button onclick="switchTab('livrables-tab')" id="btn-livrables-tab" class="px-5 py-2 text-sm font-semibold rounded-md text-slate-500 hover:text-slate-700 transition flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+                Édition Livrables
+            </button>
+            {% else %}
+            <button disabled title="Générez d'abord la cartographie SHP" id="btn-livrables-tab" class="px-5 py-2 text-sm font-semibold rounded-md text-slate-300 bg-slate-50 border border-slate-100 cursor-not-allowed flex items-center gap-2 opacity-50">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+                Édition Livrables
+            </button>
+            {% endif %}
+        </div>
+
+        <!-- CONTENU CARTE -->
+        <div id="map-tab" class="flex-1 bg-white rounded-xl shadow-sm border border-slate-100 p-1.5 relative min-h-[300px] flex flex-col">
+            <div id="map" class="z-0 h-full w-full rounded-lg"></div>
+        </div>
+
+        <!-- CONTENU TABLE ATTRIBUTAIRE -->
+        <div id="table-tab" class="hidden flex-1 bg-white rounded-xl shadow-sm border border-slate-100 flex-col overflow-hidden relative">
+            
+            <!-- Loading overlay -->
+            <div id="table-loading" class="hidden absolute inset-0 bg-white/80 z-10 flex items-center justify-center">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600"></div>
+            </div>
+
+            <div class="p-3 border-b border-slate-100 bg-slate-50/80 flex justify-between items-center">
+                <h3 class="font-semibold text-slate-800 text-sm flex items-center gap-2" id="table-title">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-brand-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Aucune couche sélectionnée
+                </h3>
+                <div id="table-actions" class="hidden flex gap-2">
+                    <button id="btn-edit-table" onclick="toggleEditMode()" class="bg-amber-100 text-amber-700 hover:bg-amber-200 px-3 py-1.5 rounded text-xs font-semibold flex items-center gap-1 transition">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                        </svg>
+                        Activer l'édition
+                    </button>
+                    <button id="btn-save-table" onclick="sauvegarderAttributs()" class="hidden bg-emerald-600 text-white hover:bg-emerald-700 px-3 py-1.5 rounded text-xs font-semibold flex items-center gap-1 transition shadow-sm">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                        Enregistrer
+                    </button>
+                </div>
+            </div>
+            
+            <div id="table-empty" class="absolute inset-0 top-12 flex flex-col items-center justify-center bg-white z-0">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-slate-200 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+                <p class="text-sm font-medium text-slate-500">Sélectionnez la table d'une couche</p>
+                <p class="text-xs text-slate-400 mt-1">Cliquez sur l'icône tableau à côté d'une couche dans le panneau de gauche.</p>
+            </div>
+
+            <div class="flex-1 overflow-auto hidden" id="table-container">
+                <table class="w-full text-left border-collapse text-xs whitespace-nowrap">
+                    <thead class="bg-slate-50 sticky top-0 shadow-sm z-10" id="table-head">
+                    </thead>
+                    <tbody class="divide-y divide-slate-100" id="table-body">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Conflit Génération SHP -->
+<div id="modal-conflit-shp" class="fixed inset-0 glass-bg hidden z-50 flex items-center justify-center animate-fadeIn p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col">
+        <div class="p-6 border-b border-slate-100 flex items-center gap-3 bg-amber-50/50 text-amber-800">
+            <div class="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0 text-amber-600">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+            </div>
+            <div>
+                <h3 class="text-base font-bold text-slate-800">Livrables existants</h3>
+                <p class="text-xs text-slate-500">Des livrables ont déjà été générés pour ce projet.</p>
+            </div>
+        </div>
+        
+        <div class="p-6 space-y-4 bg-white text-slate-600 text-sm">
+            <p>Comment souhaitez-vous générer les fichiers Shapefiles ?</p>
+            
+            <div class="space-y-3">
+                <button onclick="lancerGenererEtudeShpMap('overwrite')" class="w-full text-left p-3 rounded-xl border border-slate-200 hover:border-amber-500 hover:bg-amber-50/30 transition group">
+                    <div class="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+                        Écraser (Regénérer depuis l'Input)
+                    </div>
+                    <p class="text-[11px] text-slate-400 mt-1 leading-relaxed">Recopie la géométrie brute et réinitialise tous les attributs par défaut. <strong>Perte de vos modifications dans l'Édition.</strong></p>
+                </button>
+
+                <button onclick="lancerGenererEtudeShpMap('keep')" class="w-full text-left p-3 rounded-xl border border-slate-200 hover:border-brand-500 hover:bg-brand-50/30 transition group">
+                    <div class="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                        Conserver et Mettre à jour
+                    </div>
+                    <p class="text-[11px] text-slate-400 mt-1 leading-relaxed">Garde vos fichiers existants avec les modifications apportées dans la table d'édition des livrables.</p>
+                </button>
+            </div>
+        </div>
+        
+        <div class="p-4 border-t border-slate-100 bg-slate-50 flex justify-end">
+            <button onclick="fermerModalConflit()" class="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 transition">
+                Annuler
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Génération automatique des câbles (étude APD FO) -->
+<div id="modal-cables-apd" class="fixed inset-0 glass-bg hidden z-50 flex items-center justify-center animate-fadeIn p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col">
+        <div class="p-6 border-b border-slate-100 flex items-center gap-3 bg-brand-50/50 text-brand-800">
+            <div class="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center flex-shrink-0 text-brand-600">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+            </div>
+            <div>
+                <h3 class="text-base font-bold text-slate-800">Couche CABLES vide</h3>
+                <p class="text-xs text-slate-500">Aucun câble n'a été importé pour ce projet.</p>
+            </div>
+        </div>
+
+        <div class="p-6 space-y-4 bg-white text-slate-600 text-sm">
+            <p>S'agit-il d'une étude <strong>APD FO</strong> ? Les câbles peuvent être générés automatiquement à partir des couches <strong>SUPPORT</strong> + <strong>BPE</strong> (+ BTS).</p>
+
+            <div class="space-y-3">
+                <button id="btn-cables-oui" onclick="genererCablesAuto()" class="w-full text-left p-3 rounded-xl border border-slate-200 hover:border-brand-500 hover:bg-brand-50/30 transition group">
+                    <div class="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-brand-500"></span>
+                        Oui, générer les câbles automatiquement
+                    </div>
+                    <p class="text-[11px] text-slate-400 mt-1 leading-relaxed">Un câble est créé entre chaque paire de boîtes consécutives (BPE / BTS), en fusionnant les supports par ORDRE. Écrit dans les couches livrable.</p>
+                </button>
+
+                <button onclick="refuserCablesAuto()" class="w-full text-left p-3 rounded-xl border border-slate-200 hover:border-slate-400 hover:bg-slate-50 transition group">
+                    <div class="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-slate-400"></span>
+                        Non, continuer sans générer
+                    </div>
+                    <p class="text-[11px] text-slate-400 mt-1 leading-relaxed">Conserve l'import tel quel (vous pourrez générer les livrables manuellement).</p>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Propositions de nomenclature (champs vides à l'import) -->
+<div id="modal-nomenclature" class="fixed inset-0 glass-bg hidden z-50 flex items-center justify-center animate-fadeIn p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
+        <div class="p-5 border-b border-slate-100 flex items-center gap-3 bg-brand-50/50">
+            <div class="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center text-brand-600 flex-shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+            </div>
+            <div>
+                <h3 class="text-base font-bold text-slate-800">Compléter la nomenclature</h3>
+                <p class="text-xs text-slate-500">Propositions conformes NETGEO pour les champs vides (SUPPORT / PT / CÂBLES).</p>
+            </div>
+        </div>
+        <div id="nomen-contenu" class="p-5 space-y-5 overflow-y-auto text-sm text-slate-600"></div>
+        <div class="p-4 border-t border-slate-100 bg-slate-50 flex justify-between items-center">
+            <span id="nomen-info" class="text-xs text-slate-400"></span>
+            <div class="flex gap-2">
+                <button onclick="ignorerNomenclature()" class="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 transition">Ignorer</button>
+                <button id="btn-nomen-appliquer" onclick="appliquerNomenclature()" class="px-4 py-2 text-xs font-semibold bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition shadow-sm">Appliquer les propositions</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts_extra %}
+<style>
+@keyframes blinkBtn { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+.btn-blink { animation: blinkBtn 0.9s ease-in-out infinite; }
+</style>
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+    // ===== INITIALISATION DE LA CARTE =====
+    const map = L.map('map').setView([46.603354, 1.888334], 6);
+    
+    // Fond de carte OpenStreetMap
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    }).addTo(map);
+    
+    // Stockage des couches chargées (clé = couche_id, valeur = L.geoJSON layer)
+    const loadedLayers = {};
+    const projetId = {{ projet.id }};
+
+    // ===== CHARGEMENT AUTOMATIQUE DES COUCHES =====
+    document.querySelectorAll('.layer-toggle').forEach(function(checkbox) {
+        const coucheId = checkbox.dataset.coucheId;
+        const couleur = checkbox.dataset.couleur || '#3388ff';
+        chargerCouche(coucheId, couleur);
+        
+        // Toggle de visibilité
+        checkbox.addEventListener('change', function() {
+            if (this.checked) {
+                chargerCouche(coucheId, couleur);
+            } else {
+                if (loadedLayers[coucheId]) {
+                    map.removeLayer(loadedLayers[coucheId]);
+                    delete loadedLayers[coucheId];
+                }
+            }
+        });
+    });
+
+    function chargerCouche(coucheId, couleur) {
+        fetch('/api/projets/' + projetId + '/couches/' + coucheId + '/geojson')
+            .then(r => r.json())
+            .then(data => {
+                if (data.geojson) {
+                    const geojsonData = JSON.parse(data.geojson);
+                    const layer = L.geoJSON(geojsonData, {
+                        style: { color: couleur || data.couleur, weight: 2, opacity: 0.8, fillOpacity: 0.3 },
+                        pointToLayer: function(feature, latlng) {
+                            return L.circleMarker(latlng, {
+                                radius: 6, fillColor: couleur || data.couleur,
+                                color: '#fff', weight: 1, opacity: 1, fillOpacity: 0.8
+                            });
+                        },
+                        onEachFeature: function(feature, layer) {
+                            // Popup avec les attributs au clic
+                            if (feature.properties) {
+                                let popupContent = '<div class="text-xs">';
+                                for (const [key, value] of Object.entries(feature.properties)) {
+                                    popupContent += '<b>' + key + '</b>: ' + (value || '—') + '<br>';
+                                }
+                                popupContent += '</div>';
+                                layer.bindPopup(popupContent);
+                            }
+                        }
+                    }).addTo(map);
+                    
+                    loadedLayers[coucheId] = layer;
+                    // Zoomer sur l'étendue des données (sauf couche vide : bounds invalides)
+                    const bounds = layer.getBounds();
+                    if (bounds && bounds.isValid()) {
+                        map.fitBounds(bounds, { padding: [30, 30] });
+                    }
+                }
+            })
+            .catch(err => console.error('Erreur chargement couche:', err));
+    }
+
+    // ===== DRAG & DROP UPLOAD =====
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const fileNames = document.getElementById('file-names');
+    const btnUpload = document.getElementById('btn-upload');
+
+    dropZone.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        this.classList.add('drag-over');
+    });
+    dropZone.addEventListener('dragleave', function() {
+        this.classList.remove('drag-over');
+    });
+    dropZone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        this.classList.remove('drag-over');
+        fileInput.files = e.dataTransfer.files;
+        afficherFichiers(e.dataTransfer.files);
+    });
+    fileInput.addEventListener('change', function() {
+        afficherFichiers(this.files);
+    });
+
+    function afficherFichiers(files) {
+        if (files.length > 0) {
+            const noms = Array.from(files).map(f => f.name).join(', ');
+            fileNames.textContent = noms;
+            fileNames.classList.remove('hidden');
+            btnUpload.classList.remove('hidden');
+        }
+    }
+
+    // ===== SOUMISSION UPLOAD (fetch + détection câbles APD FO) =====
+    const formUpload = document.getElementById('form-upload');
+    formUpload.addEventListener('submit', function(e) {
+        e.preventDefault();
+        if (!fileInput.files || fileInput.files.length === 0) return;
+        const originalContent = btnUpload.textContent;
+        btnUpload.disabled = true;
+        btnUpload.textContent = 'Import en cours…';
+
+        fetch(formUpload.action, { method: 'POST', body: new FormData(formUpload) })
+            .then(r => r.json().then(data => ({ ok: r.ok, data })))
+            .then(({ ok, data }) => {
+                if (!ok) {
+                    alert('Erreur import : ' + (data.error || data.detail || 'inconnue'));
+                    btnUpload.disabled = false;
+                    btnUpload.textContent = originalContent;
+                    return;
+                }
+                if (data.couches_a_completer && data.couches_a_completer.length) {
+                    ouvrirNomenclature(data.couches_a_completer, data);
+                } else if (data.cables_vides && data.peut_generer_cables) {
+                    document.getElementById('modal-cables-apd').classList.remove('hidden');
+                } else {
+                    window.location.href = data.redirect_url || ('/map/' + projetId);
+                }
+            })
+            .catch(err => {
+                alert('Erreur import : ' + err);
+                btnUpload.disabled = false;
+                btnUpload.textContent = originalContent;
+            });
+    });
+
+    // ===== GÉNÉRATION AUTOMATIQUE DES CÂBLES (étude APD FO) =====
+    function genererCablesAuto() {
+        const btn = document.getElementById('btn-cables-oui');
+        if (btn) { btn.disabled = true; btn.querySelector('div').textContent = 'Génération en cours…'; }
+        fetch('/api/projets/' + projetId + '/generer-cables', { method: 'POST' })
+            .then(r => r.json().then(data => ({ ok: r.ok, data })))
+            .then(({ ok, data }) => {
+                if (!ok) { alert('Erreur : ' + (data.detail || 'génération impossible')); }
+                else if (data.nb_cables === 0) { alert(data.message); }
+                window.location.href = '/map/' + projetId;
+            })
+            .catch(err => { alert('Erreur : ' + err); window.location.href = '/map/' + projetId; });
+    }
+
+    function refuserCablesAuto() {
+        document.getElementById('modal-cables-apd').classList.add('hidden');
+        window.location.href = '/map/' + projetId;
+    }
+
+    // ===== PROPOSITIONS DE NOMENCLATURE (champs vides à l'import) =====
+    function ouvrirNomenclature(couches) {
+        const cont = document.getElementById('nomen-contenu');
+        cont.innerHTML = '<p class="text-slate-400">Analyse de la nomenclature…</p>';
+        document.getElementById('modal-nomenclature').classList.remove('hidden');
+        Promise.all(couches.map(c =>
+            fetch('/api/projets/' + projetId + '/couches/' + c.id + '/propositions')
+                .then(r => r.json()).then(d => ({ couche: c, data: d })).catch(() => ({ couche: c, data: { propositions: [] } }))
+        )).then(resultats => {
+            cont.innerHTML = '';
+            let total = 0;
+            resultats.forEach(({ couche, data }) => {
+                const props = data.propositions || [];
+                total += props.length;
+                if (!props.length) return;
+                const bloc = document.createElement('div');
+                bloc.dataset.coucheId = couche.id;
+                let html = `<div class="font-bold text-slate-700 mb-2">${couche.nom} <span class="text-slate-400 font-normal">(${props.length})</span></div>`;
+                html += '<div class="overflow-x-auto"><table class="w-full text-xs border-collapse"><thead><tr class="text-slate-500 border-b border-slate-200">'
+                     + '<th class="p-1"></th><th class="p-1 text-left">L.</th><th class="p-1 text-left">Champ</th><th class="p-1 text-left">Actuelle</th><th class="p-1 text-left">Proposée</th><th class="p-1 text-left">Motif</th></tr></thead><tbody>';
+                props.forEach(p => {
+                    const val = (p.proposee === null || p.proposee === undefined) ? '' : ('' + p.proposee);
+                    const asaisir = val === '';
+                    html += `<tr class="border-b border-slate-50 hover:bg-slate-50/50" data-ligne="${p.ligne}" data-champ="${p.champ}">`
+                         + `<td class="p-1"><input type="checkbox" class="nomen-chk" ${(p.auto && !asaisir) ? 'checked' : ''}></td>`
+                         + `<td class="p-1">${p.ligne}</td><td class="p-1 font-medium">${p.champ}</td>`
+                         + `<td class="p-1 text-slate-400">${p.ancienne === null ? '—' : p.ancienne}</td>`
+                         + `<td class="p-1"><input class="nomen-val border ${asaisir ? 'border-amber-300 bg-amber-50/40' : 'border-slate-200'} rounded px-2 py-1 w-full min-w-[140px]" value="${val.replace(/"/g, '&quot;')}" placeholder="à saisir…"></td>`
+                         + `<td class="p-1 text-slate-400">${p.raison}</td></tr>`;
+                });
+                html += '</tbody></table></div>';
+                bloc.innerHTML = html;
+                cont.appendChild(bloc);
+            });
+            // Cocher automatiquement une ligne dès qu'on saisit/modifie sa valeur
+            cont.oninput = (e) => {
+                if (e.target.classList.contains('nomen-val')) {
+                    const tr = e.target.closest('tr');
+                    const chk = tr && tr.querySelector('.nomen-chk');
+                    if (chk) chk.checked = !!e.target.value.trim();
+                }
+            };
+            document.getElementById('nomen-info').textContent = total + ' proposition(s)';
+            if (!total) cont.innerHTML = '<p class="text-slate-500">Aucune proposition — nomenclature complète.</p>';
+        });
+    }
+    function ignorerNomenclature() {
+        document.getElementById('modal-nomenclature').classList.add('hidden');
+        window.location.href = '/map/' + projetId;
+    }
+    function appliquerNomenclature() {
+        const btn = document.getElementById('btn-nomen-appliquer');
+        btn.disabled = true; btn.textContent = 'Application…';
+        const taches = [];
+        document.getElementById('nomen-contenu').querySelectorAll('[data-couche-id]').forEach(bloc => {
+            const cid = bloc.dataset.coucheId;
+            const changements = [];
+            bloc.querySelectorAll('tr[data-ligne]').forEach(tr => {
+                const chk = tr.querySelector('.nomen-chk');
+                const val = tr.querySelector('.nomen-val');
+                if (chk && chk.checked && val && val.value.trim()) {
+                    changements.push({ ligne: parseInt(tr.dataset.ligne, 10), champ: tr.dataset.champ, valeur: val.value.trim() });
+                }
+            });
+            if (changements.length) {
+                taches.push(fetch('/api/projets/' + projetId + '/couches/' + cid + '/appliquer-propositions', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ propositions: changements })
+                }).then(r => r.json()));
+            }
+        });
+        Promise.all(taches)
+            .then(() => { window.location.href = '/map/' + projetId; })
+            .catch(err => { alert('Erreur nomenclature : ' + err); window.location.href = '/map/' + projetId; });
+    }
+
+    // ===== GENERATION PDF =====
+    function genererPDF() {
+        window.open('/api/projets/' + projetId + '/pdf', '_blank');
+    }
+
+    // ===== ONGLETS MAP / TABLE =====
+    function switchTab(tabId) {
+        const btnMap = document.getElementById('btn-map-tab');
+        const btnTable = document.getElementById('btn-table-tab');
+        const btnLivrables = document.getElementById('btn-livrables-tab');
+        const tabMap = document.getElementById('map-tab');
+        const tabTable = document.getElementById('table-tab');
+        const tableActions = document.getElementById('table-actions');
+
+        const activeClass = "px-5 py-2 text-sm font-semibold rounded-md bg-white text-brand-700 shadow-sm transition flex items-center gap-2";
+        const inactiveClass = "px-5 py-2 text-sm font-semibold rounded-md text-slate-500 hover:text-slate-700 transition flex items-center gap-2";
+
+        btnMap.className = inactiveClass;
+        btnTable.className = inactiveClass;
+        btnLivrables.className = inactiveClass;
+        
+        if (tableActions) {
+            if (tabId === 'livrables-tab') {
+                tableActions.classList.remove('hidden');
+            } else {
+                tableActions.classList.add('hidden');
+                // Si on quitte l'onglet édition, on désactive le mode édition
+                if (typeof isEditMode !== 'undefined' && isEditMode) {
+                    toggleEditMode();
+                }
+            }
+        }
+
+        if (tabId === 'map-tab') {
+            btnMap.className = activeClass;
+            tabMap.classList.remove('hidden');
+            tabMap.classList.add('flex');
+            tabTable.classList.add('hidden');
+            tabTable.classList.remove('flex');
+            setTimeout(() => map.invalidateSize(), 100);
+        } else if (tabId === 'table-tab') {
+            btnTable.className = activeClass;
+            tabTable.classList.remove('hidden');
+            tabTable.classList.add('flex');
+            tabMap.classList.add('hidden');
+            tabMap.classList.remove('flex');
+        } else if (tabId === 'livrables-tab') {
+            btnLivrables.className = activeClass;
+            tabTable.classList.remove('hidden');
+            tabTable.classList.add('flex');
+            tabMap.classList.add('hidden');
+            tabMap.classList.remove('flex');
+        }
+    }
+
+    let isEditMode = false;
+    let currentCoucheId = null;
+    let currentColonnes = [];
+    let currentEstLivrable = false;
+
+    // ===== CHARGEMENT TABLE ATTRIBUTAIRE =====
+    function chargerAttributs(coucheId) {
+        
+        const loader = document.getElementById('table-loading');
+        const emptyState = document.getElementById('table-empty');
+        const tableContainer = document.getElementById('table-container');
+        
+        // On affiche temporairement l'onglet table pour le loader
+        switchTab('table-tab');
+        
+        loader.classList.remove('hidden');
+        emptyState.classList.add('hidden');
+        tableContainer.classList.add('hidden');
+
+        fetch('/api/projets/' + projetId + '/couches/' + coucheId + '/attributs?_t=' + new Date().getTime())
+            .then(r => r.json())
+            .then(data => {
+                currentCoucheId = coucheId;
+                currentColonnes = data.colonnes;
+                isEditMode = false;
+                reinitBoutonShp();
+
+                const tableActions = document.getElementById('table-actions');
+                const btnEdit = document.getElementById('btn-edit-table');
+                const btnSave = document.getElementById('btn-save-table');
+                
+                // Basculer sur le bon onglet selon le type
+                const estLivrable = data.nom_couche.includes('[Livrable]');
+                currentEstLivrable = estLivrable;
+                if (estLivrable) {
+                    switchTab('livrables-tab');
+                } else {
+                    switchTab('table-tab');
+                }
+                
+                btnEdit.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg> Activer l'édition`;
+                btnEdit.className = "bg-amber-100 text-amber-700 hover:bg-amber-200 px-3 py-1.5 rounded text-xs font-semibold flex items-center gap-1 transition";
+                btnSave.classList.add('hidden');
+                btnSave.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg> Enregistrer`;
+                btnSave.disabled = false;
+                
+                document.getElementById('table-title').innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-brand-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    ${data.nom_couche} <span class="text-slate-400 font-normal ml-2">(${data.nb_total} entités)</span>
+                `;
+                
+                // En-têtes
+                const thead = document.getElementById('table-head');
+                let headHtml = '<tr>';
+                data.colonnes.forEach(col => {
+                    headHtml += '<th class="px-4 py-3 font-bold text-slate-700 border-b border-slate-200">' + col + '</th>';
+                });
+                if (estLivrable) {
+                    headHtml += '<th class="px-3 py-3 font-bold text-slate-700 border-b border-slate-200 text-center">Actions</th>';
+                }
+                headHtml += '</tr>';
+                thead.innerHTML = headHtml;
+
+                // Lignes
+                const tbody = document.getElementById('table-body');
+                let bodyHtml = '';
+                data.lignes.forEach((ligne, idx) => {
+                    bodyHtml += '<tr class="hover:bg-brand-50 transition" data-ligne="' + idx + '">';
+                    data.colonnes.forEach(col => {
+                        let val = ligne[col];
+                        if (val === null || val === undefined) val = '<span class="text-slate-300">-</span>';
+                        bodyHtml += '<td class="px-4 py-2 text-slate-600">' + val + '</td>';
+                    });
+                    if (estLivrable) {
+                        bodyHtml += '<td class="col-actions px-3 py-2 text-center">'
+                            + '<button type="button" onclick="supprimerLigne(' + idx + ')" '
+                            + 'title="Supprimer cette entité du SHP livrable" '
+                            + 'class="text-red-500 hover:text-white hover:bg-red-500 border border-red-200 rounded p-1 transition inline-flex items-center">'
+                            + '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>'
+                            + '</button></td>';
+                    }
+                    bodyHtml += '</tr>';
+                });
+                tbody.innerHTML = bodyHtml;
+                
+                loader.classList.add('hidden');
+                tableContainer.classList.remove('hidden');
+            })
+            .catch(err => {
+                console.error('Erreur table attributaire:', err);
+                loader.classList.add('hidden');
+                emptyState.classList.remove('hidden');
+                document.getElementById('table-title').textContent = "Erreur de chargement";
+            });
+    }
+
+    function toggleEditMode() {
+        isEditMode = !isEditMode;
+        const btnEdit = document.getElementById('btn-edit-table');
+        const btnSave = document.getElementById('btn-save-table');
+        const tbody = document.getElementById('table-body');
+        
+        if (isEditMode) {
+            btnEdit.innerHTML = "Annuler l'édition";
+            btnEdit.className = "bg-slate-100 text-slate-700 hover:bg-slate-200 px-3 py-1.5 rounded text-xs font-semibold flex items-center gap-1 transition";
+            btnSave.classList.remove('hidden');
+            
+            // Transformer les cellules en inputs
+            const cells = tbody.querySelectorAll('td');
+            cells.forEach(td => {
+                if (td.classList.contains('col-actions')) return; // colonne « Supprimer » : on n'y touche pas
+                if(td.innerHTML.includes('<span')) {
+                    td.innerHTML = `<input type="text" class="border border-brand-300 focus:border-brand-500 outline-none rounded px-2 py-1 text-xs w-full min-w-[100px]" value="">`;
+                } else {
+                    const val = td.textContent.trim().replace(/"/g, '&quot;');
+                    td.innerHTML = `<input type="text" class="border border-brand-300 focus:border-brand-500 outline-none rounded px-2 py-1 text-xs w-full min-w-[100px]" value="${val}">`;
+                }
+            });
+        } else {
+            // Recharger pour annuler
+            chargerAttributs(currentCoucheId);
+        }
+    }
+
+    function sauvegarderAttributs() {
+        const btnSave = document.getElementById('btn-save-table');
+        btnSave.innerHTML = "Enregistrement...";
+        btnSave.disabled = true;
+        
+        const tbody = document.getElementById('table-body');
+        const rows = tbody.querySelectorAll('tr');
+        
+        const donnees = [];
+        rows.forEach(tr => {
+            const inputs = tr.querySelectorAll('input');
+            let rowData = {};
+            inputs.forEach((input, index) => {
+                const colName = currentColonnes[index];
+                rowData[colName] = input.value.trim() === "" ? null : input.value.trim();
+            });
+            donnees.push(rowData);
+        });
+        
+        fetch('/api/projets/' + projetId + '/couches/' + currentCoucheId + '/sauvegarder-attributs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(donnees)
+        })
+        .then(r => r.json())
+        .then(data => {
+            if(data.detail) { throw new Error(data.detail); }
+            alert(data.message || "Sauvegarde réussie");
+            
+            if (data.nouvelle_couche_id) {
+                window.location.reload();
+            } else {
+                chargerAttributs(currentCoucheId);
+                // Recharger la couche sur la carte si elle est affichée
+                if (loadedLayers[currentCoucheId]) {
+                    map.removeLayer(loadedLayers[currentCoucheId]);
+                    const checkbox = document.querySelector(`.layer-toggle[data-couche-id="${currentCoucheId}"]`);
+                    const couleur = checkbox ? checkbox.dataset.couleur : '#3388ff';
+                    chargerCouche(currentCoucheId, couleur);
+                }
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            alert("Erreur: " + err.message);
+            chargerAttributs(currentCoucheId);
+        });
+    }
+
+    // ===== SUPPRESSION D'UNE ENTITE (ligne complète du SHP livrable) =====
+    let suppressionEnCours = false;
+    function supprimerLigne(ligne) {
+        // Uniquement en édition livrable, et une seule suppression à la fois :
+        // sinon un 2e clic partirait avec des indices périmés (réindexation).
+        if (!currentEstLivrable || suppressionEnCours) return;
+
+        let avert = "Supprimer définitivement cette entité (ligne complète) du SHP livrable ?\nCette action met à jour le livrable utilisé par le PDS et le KMZ.";
+        if (isEditMode) avert += "\n\n⚠️ Les modifications non enregistrées de la table seront perdues.";
+        if (!confirm(avert)) return;
+
+        suppressionEnCours = true;
+        const boutons = document.querySelectorAll('#table-body .col-actions button');
+        boutons.forEach(b => { b.disabled = true; b.classList.add('opacity-40', 'cursor-not-allowed'); });
+
+        fetch('/api/projets/' + projetId + '/couches/' + currentCoucheId + '/entites/' + ligne, {
+            method: 'DELETE'
+        })
+        .then(r => r.json().then(data => ({ ok: r.ok, data })))
+        .then(({ ok, data }) => {
+            if (!ok) { throw new Error(data.detail || 'Suppression impossible'); }
+            // Succès : recharge la table (indices frais + boutons neufs après réindexation)
+            chargerAttributs(currentCoucheId);
+            // Recharger la couche sur la carte si elle est affichée
+            if (loadedLayers[currentCoucheId]) {
+                map.removeLayer(loadedLayers[currentCoucheId]);
+                const checkbox = document.querySelector('.layer-toggle[data-couche-id="' + currentCoucheId + '"]');
+                const couleur = checkbox ? checkbox.dataset.couleur : '#3388ff';
+                chargerCouche(currentCoucheId, couleur);
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            alert("Erreur suppression : " + err.message);
+            // Échec : on réactive les boutons existants (pas de rechargement)
+            boutons.forEach(b => { b.disabled = false; b.classList.remove('opacity-40', 'cursor-not-allowed'); });
+        })
+        .finally(() => { suppressionEnCours = false; });
+    }
+
+    let currentShpGenere = {{ shp_genere | tojson }};
+
+    let livrableDirty = false;
+
+    function creerShpDepuisIci() {
+        if (livrableDirty) {
+            // Des attributs de livrable ont été modifiés : on met à jour le SHP livrable
+            sauvegarderAttributs();
+            return;
+        }
+        if (currentShpGenere) {
+            // Régénérer : écraser les livrables existants et en créer des neufs
+            if (!confirm("Régénérer les SHP livrables : écraser les livrables existants et créer des livrables neufs ?")) return;
+            lancerGenererEtudeShpMap('overwrite');
+            return;
+        }
+        lancerGenererEtudeShpMap('overwrite');
+    }
+
+    // Passe le bouton SHP en mode "Mettre à jour" clignotant quand un attribut livrable change
+    function marquerLivrableModifie() {
+        if (livrableDirty) return;
+        livrableDirty = true;
+        const btn = document.getElementById('btn-creer-shp-ici');
+        const label = document.getElementById('btn-shp-label');
+        if (!btn || !label) return;
+        btn.classList.remove('bg-slate-600', 'hover:bg-slate-700', 'bg-brand-600', 'hover:bg-brand-700');
+        btn.classList.add('bg-amber-500', 'hover:bg-amber-600', 'btn-blink');
+        label.textContent = 'Mettre à jour SHP';
+    }
+
+    // Réinitialise le bouton SHP dans son état normal (au chargement d'une table)
+    function reinitBoutonShp() {
+        livrableDirty = false;
+        const btn = document.getElementById('btn-creer-shp-ici');
+        const label = document.getElementById('btn-shp-label');
+        if (!btn || !label) return;
+        btn.classList.remove('btn-blink', 'bg-amber-500', 'hover:bg-amber-600');
+        if (currentShpGenere) {
+            btn.classList.add('bg-slate-600', 'hover:bg-slate-700');
+            btn.classList.remove('bg-brand-600', 'hover:bg-brand-700');
+            label.textContent = 'Régénérer SHP Livrables';
+        } else {
+            btn.classList.add('bg-brand-600', 'hover:bg-brand-700');
+            btn.classList.remove('bg-slate-600', 'hover:bg-slate-700');
+            label.textContent = 'Créer les SHP (Livrables)';
+        }
+    }
+
+    function fermerModalConflit() {
+        document.getElementById('modal-conflit-shp').classList.add('hidden');
+    }
+
+    function lancerGenererEtudeShpMap(mode) {
+        document.getElementById('modal-conflit-shp').classList.add('hidden');
+        const btn = document.getElementById('btn-creer-shp-ici');
+        const originalContent = btn.innerHTML;
+        btn.innerHTML = `<svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Création...`;
+        btn.disabled = true;
+
+        fetch('/api/projets/' + projetId + '/generer-etude/shape?mode=' + mode, { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) { throw new Error(data.error); }
+                alert("Cartographie SHP générée avec succès !");
+                window.location.reload();
+            })
+            .catch(err => {
+                console.error(err);
+                alert("Une erreur s'est produite lors de la génération des Shapefiles.");
+                btn.innerHTML = originalContent;
+                btn.disabled = false;
+            });
+    }
+
+    // Détecte les modifications d'attributs dans la table d'édition des livrables
+    (function () {
+        const tb = document.getElementById('table-body');
+        if (tb) {
+            tb.addEventListener('input', function (e) {
+                if (e.target && e.target.tagName === 'INPUT') marquerLivrableModifie();
+            });
+        }
+    })();
+</script>
+{% endblock %}

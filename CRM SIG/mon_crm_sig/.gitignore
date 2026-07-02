@@ -1,0 +1,45 @@
+# === Base de données runtime ===
+crm_sig.db
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+
+# === Données générées par projet (imports + livrables) ===
+app/static/projects_data/
+
+# === Logs ===
+*.log
+error.log
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+
+# === Environnements virtuels ===
+.venv/
+venv/
+env/
+ENV/
+.env
+
+# === IDE / éditeurs ===
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# === OS ===
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# === Fichiers temporaires Office / verrous ===
+~$*
+*.tmp
+
+# === Dépôt git parasite embarqué (dossier vide accidentel " FREE") ===
+*FREE/

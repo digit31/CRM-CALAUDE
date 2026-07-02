@@ -1,0 +1,36 @@
+# === Python ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+
+# === Environnements virtuels ===
+.venv/
+venv/
+env/
+ENV/
+.env
+
+# === Base de données & données générées par l'application ===
+*.sqlite3
+CRM SIG/mon_crm_sig/crm_sig.db
+CRM SIG/mon_crm_sig/app/static/projects_data/
+
+# === Logs ===
+*.log
+
+# === Dépôts git parasites embarqués (dossiers " FREE" accidentels) ===
+*FREE/
+
+# === OS / éditeurs ===
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+
+# === Fichiers temporaires Office / verrous ===
+~$*
+*.tmp

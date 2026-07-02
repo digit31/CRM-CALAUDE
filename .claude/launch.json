@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "crm-sig",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-c", "import os,sys; d='C:/Users/ALI/Desktop/CRM CALAUDE/CRM SIG/mon_crm_sig'; os.chdir(d); sys.path.insert(0,d); import uvicorn; uvicorn.run('app.main:app', host='127.0.0.1', port=8000)"],
+      "port": 8000
+    }
+  ]
+}

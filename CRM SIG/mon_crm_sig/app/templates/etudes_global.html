@@ -1,0 +1,298 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard Analytique - GeoCRM SIG{% endblock %}
+{% block header_title %}Tableau de Bord des Études{% endblock %}
+{% block nav_etudes_global_class %}bg-white/10 text-white{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto space-y-6 pb-12">
+
+    <!-- Hero Banner with Modern Photo Background -->
+    <div class="relative bg-slate-900 rounded-2xl overflow-hidden shadow-xl mb-8 group">
+        <div class="absolute inset-0">
+            <!-- Image de fond type fibre optique/data -->
+            <img src="https://images.unsplash.com/photo-1544197150-b99a580bb7a8?q=80&w=2070&auto=format&fit=crop" alt="Fibre optique" class="w-full h-full object-cover opacity-40 group-hover:scale-105 transition-transform duration-1000">
+            <div class="absolute inset-0 bg-gradient-to-r from-slate-900 via-slate-900/80 to-transparent"></div>
+        </div>
+        <div class="relative p-8 md:p-12 z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+            <div class="max-w-2xl">
+                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-brand-500/20 text-brand-300 border border-brand-500/30 mb-4 backdrop-blur-sm">
+                    Dashboard Analytique
+                </span>
+                <h2 class="text-3xl md:text-4xl font-extrabold text-white tracking-tight mb-2">Suivi et Génération des Livrables</h2>
+                <p class="text-slate-300 text-sm md:text-base leading-relaxed">
+                    Visualisez en temps réel l'activité de production, gérez les nomenclatures par client et accédez directement aux données SHP extraites.
+                </p>
+            </div>
+            
+            <div class="flex flex-col gap-3">
+                <button onclick="document.getElementById('modal-nomenclature').classList.remove('hidden')" class="bg-white/10 hover:bg-white/20 text-white border border-white/20 backdrop-blur-md px-5 py-2.5 rounded-xl font-medium shadow-lg transition-all flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-brand-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    Nomenclatures Clients
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        <!-- Left Column: Activity & Logs -->
+        <div class="lg:col-span-2 space-y-6">
+            
+            <!-- Quick Stats -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm flex items-center gap-4">
+                    <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+                    </div>
+                    <div>
+                        <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Affaires Total</p>
+                        <p class="text-2xl font-extrabold text-slate-800">{{ projets|length }}</p>
+                    </div>
+                </div>
+                
+                <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm flex items-center gap-4">
+                    <div class="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    </div>
+                    <div>
+                        <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Livrables (Jour)</p>
+                        <p class="text-2xl font-extrabold text-slate-800">{{ logs|length }}</p>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm flex items-center gap-4">
+                    <div class="w-12 h-12 bg-orange-50 text-orange-500 rounded-xl flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+                    </div>
+                    <div>
+                        <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Couches BDD</p>
+                        {% set total_couches = namespace(value=0) %}
+                        {% for p in projets %}{% set total_couches.value = total_couches.value + p.couches|length %}{% endfor %}
+                        <p class="text-2xl font-extrabold text-slate-800">{{ total_couches.value }}</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Activity Logs -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                    <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        Dernières Générations
+                    </h3>
+                </div>
+                <div class="p-0">
+                    {% if logs %}
+                    <ul class="divide-y divide-slate-100">
+                        {% for log in logs %}
+                        <li class="p-4 hover:bg-slate-50 flex items-start gap-4 transition-colors">
+                            <div class="mt-1">
+                                {% if 'SHP' in log.type_livrable %}
+                                <div class="w-8 h-8 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg></div>
+                                {% elif 'KMZ' in log.type_livrable %}
+                                <div class="w-8 h-8 rounded-full bg-sky-100 text-sky-600 flex items-center justify-center"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></div>
+                                {% else %}
+                                <div class="w-8 h-8 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg></div>
+                                {% endif %}
+                            </div>
+                            <div class="flex-1">
+                                <p class="text-sm font-medium text-slate-800">
+                                    Livrable <span class="font-bold">{{ log.type_livrable }}</span> généré pour l'affaire <a href="/projets/{{ log.projet.id }}/etudes" class="text-brand-600 hover:underline">{{ log.projet.reference }}</a>
+                                </p>
+                                <p class="text-xs text-slate-500 mt-1">Client: {{ log.projet.client.nom if log.projet.client else 'Non défini' }}</p>
+                                {% if log.details %}
+                                <p class="text-xs text-slate-400 mt-1 italic">{{ log.details }}</p>
+                                {% endif %}
+                            </div>
+                            <div class="text-xs text-slate-400 text-right whitespace-nowrap">
+                                {{ log.date_generation.strftime('%d/%m/%Y %H:%M') }}
+                            </div>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    {% else %}
+                    <div class="p-12 text-center text-slate-500">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto mb-3 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        Aucun livrable n'a encore été généré.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Right Column: Projects list & Data recovery -->
+        <div class="space-y-6">
+            
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                    <h3 class="text-base font-bold text-slate-800">Gestion des Projets & Données</h3>
+                </div>
+                <div class="p-4 space-y-3">
+                    {% for projet in projets %}
+                    <div class="p-3 border border-slate-100 rounded-xl hover:bg-slate-50 transition-colors flex items-center justify-between group">
+                        <div>
+                            <p class="text-sm font-semibold text-slate-800">{{ projet.reference }}</p>
+                            <p class="text-xs text-slate-500">{{ projet.nom }}</p>
+                        </div>
+                        <a href="/projets/{{ projet.id }}/etudes" class="opacity-0 group-hover:opacity-100 text-brand-600 bg-brand-50 hover:bg-brand-100 p-2 rounded-lg transition-all">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            </svg>
+                        </a>
+                    </div>
+                    {% else %}
+                    <p class="text-sm text-slate-500 text-center py-4">Aucun projet actif.</p>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="bg-gradient-to-br from-brand-600 to-brand-800 rounded-2xl shadow-lg p-6 text-white relative overflow-hidden">
+                <div class="absolute -right-10 -bottom-10 opacity-10">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-48 w-48" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                    </svg>
+                </div>
+                <h3 class="text-lg font-bold mb-2">Extraction BDD SHP</h3>
+                <p class="text-brand-100 text-sm mb-4">Récupérez directement les données attributaires depuis les fichiers Shapefiles.</p>
+                <button class="w-full bg-white text-brand-700 hover:bg-brand-50 font-bold py-2 rounded-lg shadow transition-colors text-sm">
+                    Télécharger Synthèse Globale
+                </button>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<!-- Modal Nomenclature Client -->
+<div id="modal-nomenclature" class="fixed inset-0 glass-bg hidden z-50 flex items-center justify-center animate-fadeIn p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+        <div class="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+            <div>
+                <h3 class="text-xl font-bold text-slate-800">Nomenclatures & Règles d'Export</h3>
+                <p class="text-sm text-slate-500 mt-1">Définissez comment nommer et extraire les données depuis les SHP par client.</p>
+            </div>
+            <button onclick="document.getElementById('modal-nomenclature').classList.add('hidden')" class="text-slate-400 hover:text-slate-600 transition bg-white rounded-lg p-1 border border-slate-200">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+        </div>
+        
+        <div class="p-6 overflow-y-auto flex-1 bg-white">
+            <div class="space-y-6">
+                <!-- Sélecteur Client -->
+                <div>
+                    <label class="block text-sm font-semibold text-slate-700 mb-2">Sélectionnez un Client</label>
+                    <select id="nom_client_select" class="w-full border-slate-300 rounded-lg shadow-sm focus:ring-brand-500 focus:border-brand-500 sm:text-sm px-4 py-2.5 border outline-none bg-slate-50">
+                        <option value="">-- Choisir un client --</option>
+                        {% for client in clients %}
+                        <option value="{{ client.id }}" data-nomenclature='{{ client.nomenclature|tojson|safe if client.nomenclature else "{}" }}'>{{ client.nom }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div id="nomenclature_form_area" class="hidden space-y-4 border-t border-slate-100 pt-6">
+                    <h4 class="font-medium text-slate-800">Paramètres de nommage des couches SHP générées</h4>
+                    
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-medium text-slate-500 mb-1">Préfixe Fichier (Ex: APD_, DOE_)</label>
+                            <input type="text" id="nom_prefixe" placeholder="Ex: APD_FO_" class="w-full border-slate-300 rounded-lg shadow-sm focus:ring-brand-500 focus:border-brand-500 sm:text-sm px-3 py-2 border outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-500 mb-1">Système de Projection (EPSG)</label>
+                            <input type="text" id="nom_epsg" placeholder="Ex: 2154" value="2154" class="w-full border-slate-300 rounded-lg shadow-sm focus:ring-brand-500 focus:border-brand-500 sm:text-sm px-3 py-2 border outline-none">
+                        </div>
+                    </div>
+
+                    <div class="mt-4">
+                        <label class="block text-xs font-medium text-slate-500 mb-1">Mappage des attributs pour l'extraction directe (JSON)</label>
+                        <p class="text-xs text-slate-400 mb-2">Exemple: {"Cables": ["LONGUEUR", "CAPACITE"], "BPE": ["TYPE", "MODELE"]}</p>
+                        <textarea id="nom_mapping" rows="4" class="w-full font-mono text-xs border-slate-300 rounded-lg shadow-sm focus:ring-brand-500 focus:border-brand-500 p-3 border outline-none bg-slate-50" placeholder='{"Couche": ["Champ1", "Champ2"]}'></textarea>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
+            <button onclick="document.getElementById('modal-nomenclature').classList.add('hidden')" class="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition">Fermer</button>
+            <button onclick="sauvegarderNomenclature()" id="btn_save_nom" disabled class="px-5 py-2 text-sm font-bold text-white bg-brand-600 rounded-lg shadow-md hover:bg-brand-700 transition disabled:opacity-50 disabled:cursor-not-allowed">Enregistrer les règles</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const selectClient = document.getElementById('nom_client_select');
+    const formArea = document.getElementById('nomenclature_form_area');
+    const btnSave = document.getElementById('btn_save_nom');
+
+    selectClient.addEventListener('change', (e) => {
+        if(e.target.value) {
+            formArea.classList.remove('hidden');
+            btnSave.disabled = false;
+            
+            // Charger les données existantes
+            const option = e.target.options[e.target.selectedIndex];
+            try {
+                const data = JSON.parse(option.getAttribute('data-nomenclature') || '{}');
+                document.getElementById('nom_prefixe').value = data.prefixe || '';
+                document.getElementById('nom_epsg').value = data.epsg || '2154';
+                document.getElementById('nom_mapping').value = data.mapping ? JSON.stringify(data.mapping, null, 2) : '';
+            } catch(err) {
+                console.error(err);
+            }
+        } else {
+            formArea.classList.add('hidden');
+            btnSave.disabled = true;
+        }
+    });
+
+    async function sauvegarderNomenclature() {
+        const clientId = selectClient.value;
+        if(!clientId) return;
+
+        btnSave.innerText = "Enregistrement...";
+        
+        let mapping = {};
+        try {
+            const mapStr = document.getElementById('nom_mapping').value;
+            if(mapStr.trim()) mapping = JSON.parse(mapStr);
+        } catch(e) {
+            alert("Erreur: Le JSON du mappage n'est pas valide.");
+            btnSave.innerText = "Enregistrer les règles";
+            return;
+        }
+
+        const data = {
+            prefixe: document.getElementById('nom_prefixe').value,
+            epsg: document.getElementById('nom_epsg').value,
+            mapping: mapping
+        };
+
+        try {
+            const res = await fetch(`/api/clients/${clientId}/nomenclature`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            if(res.ok) {
+                alert("Nomenclature enregistrée avec succès !");
+                // Update databased attribute for quick reload
+                selectClient.options[selectClient.selectedIndex].setAttribute('data-nomenclature', JSON.stringify(data));
+            } else {
+                alert("Erreur lors de l'enregistrement.");
+            }
+        } catch(e) {
+            alert("Erreur de connexion.");
+        }
+        btnSave.innerText = "Enregistrer les règles";
+    }
+</script>
+{% endblock %}

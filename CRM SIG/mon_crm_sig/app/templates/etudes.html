@@ -1,0 +1,643 @@
+{% extends "base.html" %}
+
+{% block nav_dashboard_class %}text-brand-300 hover:bg-white/10{% endblock %}
+{% block nav_etudes_class %}bg-white/10 text-white shadow-sm{% endblock %}
+
+{% block header_title %}
+<a href="/" class="text-slate-400 hover:text-brand-600 transition mr-2">
+    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+    </svg>
+</a>
+<span class="text-sm text-slate-400 mr-2">{{ projet.reference }}</span>
+<span class="font-semibold text-slate-700">{{ projet.nom }}</span>
+<span class="ml-3 text-brand-600 font-semibold">&bull; Études & Livrables</span>
+{% endblock %}
+
+{% block content %}
+<div class="h-full flex flex-col max-w-7xl mx-auto">
+    
+    <!-- En-tête de page -->
+    <div class="mb-6 flex justify-between items-end">
+        <div>
+            <h2 class="text-2xl font-bold text-slate-800 tracking-tight">Catalogue des Études</h2>
+            <p class="text-slate-500 mt-1 text-sm">Générez et consolidez les livrables normés pour chaque phase du projet.</p>
+        </div>
+    </div>
+
+    <!-- Zone de notification succès -->
+    <div id="resultat-generation" class="{% if not dossier_existant %}hidden{% endif %} mb-6 bg-brand-50 border border-brand-200 rounded-xl p-4 flex items-start gap-4 animate-fadeIn shadow-sm">
+        <div class="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center flex-shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-brand-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+        </div>
+        <div class="flex-1">
+            <h4 class="font-semibold text-brand-800">Dossier des livrables générés</h4>
+            <p class="text-sm text-brand-700 mt-1">Vous pouvez consulter les livrables générés localement sur votre ordinateur à cette adresse :</p>
+            <div class="mt-2 flex items-center gap-2">
+                <code id="dossier-path" class="block flex-1 bg-white border border-brand-200 px-3 py-2 rounded-lg text-xs font-mono text-slate-600 select-all overflow-x-auto">{% if dossier_existant %}{{ dossier_existant }}{% endif %}</code>
+            </div>
+        </div>
+    </div>
+
+    <!-- Interface principale : 2 colonnes -->
+    <div class="flex-1 flex gap-6 min-h-0">
+        
+        <!-- Colonne Gauche : Menu des Études -->
+        <div class="w-72 flex flex-col gap-2">
+            
+            <!-- Item Actif : APD FO -->
+            <button onclick="switchTab('apd-fo', this)" class="tab-btn w-full text-left bg-white border-2 border-brand-500 rounded-xl p-4 shadow-sm relative overflow-hidden group active-tab">
+                <div class="absolute top-0 right-0 w-16 h-16 bg-brand-50 rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-110"></div>
+                <div class="flex items-center gap-3 relative z-10">
+                    <div class="w-10 h-10 bg-brand-100 text-brand-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-slate-800 text-sm">APD FO</h3>
+                        <p class="text-[11px] text-slate-500 font-medium uppercase tracking-wider">Fibre Optique</p>
+                    </div>
+                </div>
+            </button>
+
+            <!-- Item Actif : DOE FO -->
+            <button onclick="switchTab('doe-fo', this)" class="tab-btn w-full text-left bg-slate-50/50 border border-slate-200 rounded-xl p-4 opacity-75 hover:opacity-100 transition-opacity cursor-pointer group">
+                <div class="flex items-center gap-3 relative z-10">
+                    <div class="w-10 h-10 bg-slate-200 group-hover:bg-brand-100 group-hover:text-brand-600 text-slate-400 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-slate-600 group-hover:text-slate-800 text-sm transition-colors">DOE FO</h3>
+                        <p class="text-[11px] text-slate-400 font-medium uppercase tracking-wider">Fibre Optique</p>
+                    </div>
+                </div>
+            </button>
+
+            <!-- Items Inactifs -->
+            <button class="w-full text-left bg-slate-50/50 border border-slate-200 rounded-xl p-4 opacity-75 cursor-not-allowed">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-slate-200 text-slate-400 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                            </svg>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-slate-600 text-sm">APS</h3>
+                            <p class="text-[11px] text-slate-400 font-medium uppercase tracking-wider">Avant-Projet</p>
+                        </div>
+                    </div>
+                    <span class="text-[10px] font-bold bg-slate-200 text-slate-500 px-2 py-1 rounded-md">Bientôt</span>
+                </div>
+            </button>
+
+            <button class="w-full text-left bg-slate-50/50 border border-slate-200 rounded-xl p-4 opacity-75 cursor-not-allowed">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-slate-200 text-slate-400 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                            </svg>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-slate-600 text-sm">APD GC</h3>
+                            <p class="text-[11px] text-slate-400 font-medium uppercase tracking-wider">Génie Civil</p>
+                        </div>
+                    </div>
+                    <span class="text-[10px] font-bold bg-slate-200 text-slate-500 px-2 py-1 rounded-md">Bientôt</span>
+                </div>
+            </button>
+
+            <button class="w-full text-left bg-slate-50/50 border border-slate-200 rounded-xl p-4 opacity-75 cursor-not-allowed">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-slate-200 text-slate-400 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                            </svg>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-slate-600 text-sm">DOE GC</h3>
+                            <p class="text-[11px] text-slate-400 font-medium uppercase tracking-wider">Génie Civil</p>
+                        </div>
+                    </div>
+                    <span class="text-[10px] font-bold bg-slate-200 text-slate-500 px-2 py-1 rounded-md">Bientôt</span>
+                </div>
+            </button>
+        </div>
+
+        <!-- Colonne Droite : Contenu de l'étude sélectionnée -->
+        <div class="flex-1 bg-white border border-slate-200 rounded-2xl shadow-sm overflow-y-auto relative">
+            
+            <!-- Contenu APD FO -->
+            <div id="tab-apd-fo" class="tab-content">
+                <!-- Header du contenu -->
+                <div class="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                <div>
+                    <h2 class="text-xl font-bold text-slate-800">Avant-Projet Détaillé (APD FO)</h2>
+                    <p class="text-sm text-slate-500 mt-1">Générez l'ensemble des livrables requis pour le dossier APD Fibre Optique.</p>
+                </div>
+                
+                <button onclick="genererEtude('doe_global')" id="btn-doe_global" class="bg-brand-600 hover:bg-brand-700 text-white font-medium text-sm py-2.5 px-6 rounded-lg shadow-md hover:shadow-lg transition-all flex items-center gap-2 transform active:scale-95">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    Générer le Dossier Complet
+                </button>
+            </div>
+
+            <!-- Liste des fichiers unitaires -->
+            <div class="p-8">
+                <h3 class="text-sm font-bold text-slate-400 uppercase tracking-wider mb-6">Fichiers Individuels (Génération Unitaire)</h3>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    
+                    <!-- Rapport PDF -->
+                    <div class="border border-slate-200 rounded-xl p-4 flex items-center justify-between hover:border-brand-300 transition-colors group">
+                        <div class="flex items-center gap-4">
+                            <div class="w-10 h-10 bg-red-50 text-red-500 rounded-lg flex items-center justify-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                </svg>
+                            </div>
+                            <div>
+                                <h4 class="font-semibold text-slate-800 text-sm">Rapport APD_HTL</h4>
+                                <p class="text-xs text-slate-500">Document de synthèse (PDF)</p>
+                            </div>
+                        </div>
+                        <button onclick="genererEtude('rapport')" id="btn-rapport" class="text-brand-600 hover:text-white border border-brand-600 hover:bg-brand-600 font-medium text-xs py-1.5 px-3 rounded transition-colors">
+                            Générer
+                        </button>
+                    </div>
+
+                    <!-- Plan de Câblage (Excel) -->
+                    <div class="border border-slate-200 rounded-xl p-4 flex items-center justify-between hover:border-brand-300 transition-colors group">
+                        <div class="flex items-center gap-4">
+                            <div class="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-lg flex items-center justify-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                            </div>
+                            <div>
+                                <h4 class="font-semibold text-slate-800 text-sm">Plan de Câblage</h4>
+                                <p class="text-xs text-slate-500">Fichier Excel (PDS)</p>
+                            </div>
+                        </div>
+                        <button onclick="ouvrirModalPds()" id="btn-pds" class="text-brand-600 hover:text-white border border-brand-600 hover:bg-brand-600 font-medium text-xs py-1.5 px-3 rounded transition-colors">
+                            Générer
+                        </button>
+                    </div>
+
+                    <!-- Synoptique PDF -->
+                    <div class="border border-slate-200 rounded-xl p-4 flex items-center justify-between hover:border-brand-300 transition-colors group">
+                        <div class="flex items-center gap-4">
+                            <div class="w-10 h-10 bg-indigo-50 text-indigo-500 rounded-lg flex items-center justify-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 14v3m4-3v3m4-3v3M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z" />
+                                </svg>
+                            </div>
+                            <div>
+                                <h4 class="font-semibold text-slate-800 text-sm">Plan Synoptique</h4>
+                                <p class="text-xs text-slate-500">Architecture réseau (PDF)</p>
+                            </div>
+                        </div>
+                        <button onclick="genererEtude('syno')" id="btn-syno" class="text-brand-600 hover:text-white border border-brand-600 hover:bg-brand-600 font-medium text-xs py-1.5 px-3 rounded transition-colors">
+                            Générer
+                        </button>
+                    </div>
+
+                    <!-- Cartographie SHAPE -->
+                    <div class="border border-slate-200 rounded-xl p-4 flex items-center justify-between hover:border-brand-300 transition-colors group">
+                        <div class="flex items-center gap-4">
+                            <div class="w-10 h-10 bg-orange-50 text-orange-500 rounded-lg flex items-center justify-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                                </svg>
+                            </div>
+                            <div>
+                                <h4 class="font-semibold text-slate-800 text-sm">Cartographie SHP</h4>
+                                <p class="text-xs text-slate-500">Données SIG brutes (.shp, .dbf)</p>
+                            </div>
+                        </div>
+                        <button onclick="genererEtude('shape')" id="btn-shape" class="text-brand-600 hover:text-white border border-brand-600 hover:bg-brand-600 font-medium text-xs py-1.5 px-3 rounded transition-colors">
+                            {% if shp_genere %}Générer{% else %}Créer SHP{% endif %}
+                        </button>
+                    </div>
+
+                    <!-- Cartographie KMZ -->
+                    <div class="border border-slate-200 rounded-xl p-4 flex items-center justify-between hover:border-brand-300 transition-colors group">
+                        <div class="flex items-center gap-4">
+                            <div class="w-10 h-10 bg-sky-50 text-sky-500 rounded-lg flex items-center justify-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                            </div>
+                            <div>
+                                <h4 class="font-semibold text-slate-800 text-sm">Cartographie KMZ</h4>
+                                <p class="text-xs text-slate-500">Pour Google Earth (.kmz)</p>
+                            </div>
+                        </div>
+                        {% if shp_genere %}
+                        <button onclick="genererEtude('kmz')" id="btn-kmz" class="text-brand-600 hover:text-white border border-brand-600 hover:bg-brand-600 font-medium text-xs py-1.5 px-3 rounded transition-colors">
+                            Générer
+                        </button>
+                        {% else %}
+                        <button disabled title="Vous devez d'abord générer la cartographie SHP" id="btn-kmz" class="text-slate-400 border border-slate-300 bg-slate-100 cursor-not-allowed font-medium text-xs py-1.5 px-3 rounded">
+                            Générer
+                        </button>
+                        {% endif %}
+                    </div>
+
+                </div>
+            </div>
+            </div> <!-- CLOSE TAB-APD-FO -->
+            
+            <!-- Contenu DOE FO -->
+            <div id="tab-doe-fo" class="tab-content hidden">
+                <!-- Header du contenu -->
+                <div class="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                    <div>
+                        <h2 class="text-xl font-bold text-slate-800">Dossier d'Ouvrages Exécutés (DOE FO)</h2>
+                        <p class="text-sm text-slate-500 mt-1">Générez l'arborescence et les livrables finaux pour le DOE Fibre Optique.</p>
+                    </div>
+                    
+                    <button onclick="genererEtude('doe_fo_global')" id="btn-doe_fo_global" class="bg-brand-600 hover:bg-brand-700 text-white font-medium text-sm py-2.5 px-6 rounded-lg shadow-md hover:shadow-lg transition-all flex items-center gap-2 transform active:scale-95">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        Générer le DOE Complet
+                    </button>
+                </div>
+
+                <!-- Liste des fichiers unitaires -->
+                <div class="p-8">
+                    <h3 class="text-sm font-bold text-slate-400 uppercase tracking-wider mb-6">Fichiers Individuels (Génération Unitaire)</h3>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        
+                        <!-- Rapport VTL -->
+                        <div class="border border-slate-200 rounded-xl p-4 flex items-center justify-between hover:border-brand-300 transition-colors group">
+                            <div class="flex items-center gap-4">
+                                <div class="w-10 h-10 bg-red-50 text-red-500 rounded-lg flex items-center justify-center">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                                </div>
+                                <div>
+                                    <h4 class="font-semibold text-slate-800 text-sm">Rapport VTL</h4>
+                                    <p class="text-xs text-slate-500">Document PDF (DOE_VTL)</p>
+                                </div>
+                            </div>
+                            <button onclick="genererEtude('doe_fo_vtl')" id="btn-doe_fo_vtl" class="text-brand-600 hover:text-white border border-brand-600 hover:bg-brand-600 font-medium text-xs py-1.5 px-3 rounded transition-colors">Générer</button>
+                        </div>
+
+                        <!-- Rapport HTL -->
+                        <div class="border border-slate-200 rounded-xl p-4 flex items-center justify-between hover:border-brand-300 transition-colors group">
+                            <div class="flex items-center gap-4">
+                                <div class="w-10 h-10 bg-red-50 text-red-500 rounded-lg flex items-center justify-center">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                                </div>
+                                <div>
+                                    <h4 class="font-semibold text-slate-800 text-sm">Rapport HTL</h4>
+                                    <p class="text-xs text-slate-500">Document PDF (DOE_HTL)</p>
+                                </div>
+                            </div>
+                            <button onclick="genererEtude('doe_fo_htl')" id="btn-doe_fo_htl" class="text-brand-600 hover:text-white border border-brand-600 hover:bg-brand-600 font-medium text-xs py-1.5 px-3 rounded transition-colors">Générer</button>
+                        </div>
+
+                        <!-- Plan Synoptique -->
+                        <div class="border border-slate-200 rounded-xl p-4 flex items-center justify-between hover:border-brand-300 transition-colors group">
+                            <div class="flex items-center gap-4">
+                                <div class="w-10 h-10 bg-indigo-50 text-indigo-500 rounded-lg flex items-center justify-center">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 14v3m4-3v3m4-3v3M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z" /></svg>
+                                </div>
+                                <div>
+                                    <h4 class="font-semibold text-slate-800 text-sm">Plan Synoptique</h4>
+                                    <p class="text-xs text-slate-500">PDF (DOE_SYNO)</p>
+                                </div>
+                            </div>
+                            <button onclick="genererEtude('doe_fo_syno')" id="btn-doe_fo_syno" class="text-brand-600 hover:text-white border border-brand-600 hover:bg-brand-600 font-medium text-xs py-1.5 px-3 rounded transition-colors">Générer</button>
+                        </div>
+
+                        <!-- Plan de Câblage (PDS) -->
+                        <div class="border border-slate-200 rounded-xl p-4 flex items-center justify-between hover:border-brand-300 transition-colors group">
+                            <div class="flex items-center gap-4">
+                                <div class="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-lg flex items-center justify-center">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                </div>
+                                <div>
+                                    <h4 class="font-semibold text-slate-800 text-sm">Plan de Boîte</h4>
+                                    <p class="text-xs text-slate-500">Fichier Excel (PDS)</p>
+                                </div>
+                            </div>
+                            <button onclick="genererEtude('doe_fo_pds')" id="btn-doe_fo_pds" class="text-brand-600 hover:text-white border border-brand-600 hover:bg-brand-600 font-medium text-xs py-1.5 px-3 rounded transition-colors">Générer</button>
+                        </div>
+
+                        <!-- Cartographie NETGEO (SHP + KMZ + DWG) -->
+                        <div class="border border-slate-200 rounded-xl p-4 flex items-center justify-between hover:border-brand-300 transition-colors group md:col-span-2">
+                            <div class="flex items-center gap-4">
+                                <div class="w-10 h-10 bg-orange-50 text-orange-500 rounded-lg flex items-center justify-center">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
+                                </div>
+                                <div>
+                                    <h4 class="font-semibold text-slate-800 text-sm">Dossier NETGEO (SHP/KMZ/DWG)</h4>
+                                    <p class="text-xs text-slate-500">Génère les dossiers Shapes, Plans, Synoptique et KMZ</p>
+                                </div>
+                            </div>
+                            <button onclick="genererEtude('doe_fo_netgeo')" id="btn-doe_fo_netgeo" class="text-brand-600 hover:text-white border border-brand-600 hover:bg-brand-600 font-medium text-xs py-1.5 px-3 rounded transition-colors">Générer Netgeo</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+        </div>
+    </div>
+</div>
+
+<!-- Modal Conflit Génération SHP -->
+<div id="modal-conflit-shp" class="fixed inset-0 glass-bg hidden z-50 flex items-center justify-center animate-fadeIn p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col">
+        <div class="p-6 border-b border-slate-100 flex items-center gap-3 bg-amber-50/50 text-amber-800">
+            <div class="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0 text-amber-600">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+            </div>
+            <div>
+                <h3 class="text-base font-bold text-slate-800">Livrables existants</h3>
+                <p class="text-xs text-slate-500">Des livrables ont déjà été générés pour ce projet.</p>
+            </div>
+        </div>
+        
+        <div class="p-6 space-y-4 bg-white text-slate-600 text-sm">
+            <p>Comment souhaitez-vous générer les fichiers Shapefiles ?</p>
+            
+            <div class="space-y-3">
+                <button onclick="lancerGenererEtudeShp('overwrite')" class="w-full text-left p-3 rounded-xl border border-slate-200 hover:border-amber-500 hover:bg-amber-50/30 transition group">
+                    <div class="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+                        Écraser (Regénérer depuis l'Input)
+                    </div>
+                    <p class="text-[11px] text-slate-400 mt-1 leading-relaxed">Recopie la géométrie brute et réinitialise tous les attributs par défaut. <strong>Perte de vos modifications dans l'Édition.</strong></p>
+                </button>
+
+                <button onclick="lancerGenererEtudeShp('keep')" class="w-full text-left p-3 rounded-xl border border-slate-200 hover:border-brand-500 hover:bg-brand-50/30 transition group">
+                    <div class="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                        Conserver et Mettre à jour
+                    </div>
+                    <p class="text-[11px] text-slate-400 mt-1 leading-relaxed">Garde vos fichiers existants avec les modifications apportées dans la table d'édition des livrables.</p>
+                </button>
+            </div>
+        </div>
+        
+        <div class="p-4 border-t border-slate-100 bg-slate-50 flex justify-end">
+            <button onclick="fermerModalConflit()" class="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 transition">
+                Annuler
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Génération PDS (plan de soudure) -->
+<div id="modal-pds" class="fixed inset-0 glass-bg hidden z-50 flex items-center justify-center animate-fadeIn p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col">
+        <div class="p-6 border-b border-slate-100 flex items-center gap-3 bg-brand-50/50 text-brand-800">
+            <div class="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center flex-shrink-0 text-brand-600">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+            </div>
+            <div>
+                <h3 class="text-base font-bold text-slate-800">Générer le plan PDS</h3>
+                <p class="text-xs text-slate-500">Un onglet Excel par boîte BPE (plan de soudure).</p>
+            </div>
+        </div>
+        <!-- Étape 1 : formulaire -->
+        <div id="pds-etape-form" class="p-6 space-y-4 bg-white text-slate-600 text-sm">
+            <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Nombre de FO à épissurer par boîte</label>
+                <input id="pds-nb-fo" type="number" min="1" value="2" class="w-full border border-slate-300 focus:border-brand-500 outline-none rounded-lg px-3 py-2 text-sm">
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Capacité par défaut <span class="text-slate-400 font-normal">(si absente du câble)</span></label>
+                <input id="pds-capacite" type="number" min="1" value="48" class="w-full border border-slate-300 focus:border-brand-500 outline-none rounded-lg px-3 py-2 text-sm">
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Commentaire <span class="text-slate-400 font-normal">(optionnel)</span></label>
+                <input id="pds-commentaire" type="text" placeholder="Vide = texte par défaut" class="w-full border border-slate-300 focus:border-brand-500 outline-none rounded-lg px-3 py-2 text-sm">
+            </div>
+        </div>
+
+        <!-- Étape 2 : chargement -->
+        <div id="pds-etape-loading" class="hidden p-8 flex flex-col items-center justify-center gap-4 text-center bg-white">
+            <div class="w-14 h-14 rounded-full bg-brand-50 flex items-center justify-center">
+                <svg class="animate-spin h-7 w-7 text-brand-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+            </div>
+            <div>
+                <p class="text-sm font-semibold text-slate-700">Génération du plan PDS…</p>
+                <p class="text-xs text-slate-400 mt-1">Onglets, couleurs, listes déroulantes et boutons</p>
+            </div>
+            <div class="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                <div class="pds-progress-bar h-full bg-brand-600 rounded-full"></div>
+            </div>
+        </div>
+
+        <!-- Étape 3 : succès -->
+        <div id="pds-etape-succes" class="hidden p-8 flex flex-col items-center justify-center gap-3 text-center bg-white animate-fadeIn">
+            <div class="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600">
+                <svg class="h-9 w-9" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+            </div>
+            <h3 class="text-base font-bold text-slate-800">PDS généré avec succès</h3>
+            <p id="pds-succes-msg" class="text-sm text-slate-500"></p>
+            <p id="pds-succes-path" class="text-[11px] text-slate-400 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2 break-all w-full"></p>
+            <button onclick="fermerModalPds()" class="mt-2 px-5 py-2 text-xs font-semibold bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition shadow-sm">Fermer</button>
+        </div>
+
+        <!-- Étape erreur -->
+        <div id="pds-etape-erreur" class="hidden p-8 flex flex-col items-center justify-center gap-3 text-center bg-white animate-fadeIn">
+            <div class="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center text-red-600">
+                <svg class="h-9 w-9" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+            </div>
+            <h3 class="text-base font-bold text-slate-800">Génération impossible</h3>
+            <p id="pds-erreur-msg" class="text-sm text-slate-500"></p>
+            <div class="flex gap-2 mt-2">
+                <button onclick="fermerModalPds()" class="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 transition">Fermer</button>
+                <button onclick="lancerGenerationPds()" class="px-4 py-2 text-xs font-semibold bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition shadow-sm">Réessayer</button>
+            </div>
+        </div>
+
+        <!-- Pied (uniquement à l'étape formulaire) -->
+        <div id="pds-footer" class="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-2">
+            <button onclick="fermerModalPds()" class="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 transition">Annuler</button>
+            <button id="btn-pds-lancer" onclick="lancerGenerationPds()" class="px-4 py-2 text-xs font-semibold bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition shadow-sm">Générer le PDS</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts_extra %}
+<style>
+@keyframes pdsProgress { 0% { transform: translateX(-120%); } 100% { transform: translateX(320%); } }
+.pds-progress-bar { width: 35%; animation: pdsProgress 1.1s ease-in-out infinite; }
+</style>
+<script>
+    function switchTab(tabId, btnElement) {
+        // Cacher tous les onglets
+        document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+        
+        // Afficher l'onglet sélectionné
+        document.getElementById('tab-' + tabId).classList.remove('hidden');
+        
+        // Réinitialiser les styles des boutons
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.classList.remove('bg-white', 'border-2', 'border-brand-500', 'active-tab');
+            btn.classList.add('bg-slate-50/50', 'border', 'border-slate-200');
+        });
+        
+        // Appliquer les styles au bouton actif
+        btnElement.classList.remove('bg-slate-50/50', 'border', 'border-slate-200');
+        btnElement.classList.add('bg-white', 'border-2', 'border-brand-500', 'active-tab');
+    }
+
+    let currentShpGenere = {{ shp_genere | tojson }};
+    let pendingType = null;
+
+    function genererEtude(type) {
+        if (type === 'shape' && currentShpGenere) {
+            // Ouvrir le modal
+            pendingType = type;
+            document.getElementById('modal-conflit-shp').classList.remove('hidden');
+            return;
+        }
+        
+        // Mode par défaut est overwrite
+        executerGeneration(type, 'overwrite');
+    }
+
+    function lancerGenererEtudeShp(mode) {
+        document.getElementById('modal-conflit-shp').classList.add('hidden');
+        if (pendingType) {
+            executerGeneration(pendingType, mode);
+            pendingType = null;
+        }
+    }
+    
+    function fermerModalConflit() {
+        document.getElementById('modal-conflit-shp').classList.add('hidden');
+        pendingType = null;
+    }
+
+    function executerGeneration(type, mode) {
+        const btn = document.getElementById('btn-' + type);
+        const originalContent = btn.innerHTML;
+        
+        // Loader stylisé
+        if (type === 'doe_global' || type === 'doe_fo_global') {
+            btn.innerHTML = `<svg class="animate-spin -ml-1 mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Patientez...`;
+        } else {
+            btn.innerHTML = `<svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>`;
+        }
+        
+        btn.disabled = true;
+
+        fetch('/api/projets/{{ projet.id }}/generer-etude/' + type + '?mode=' + mode, { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                if(data.error) { throw new Error(data.error); }
+                
+                // Afficher le message de succès
+                document.getElementById('resultat-generation').classList.remove('hidden');
+                document.getElementById('dossier-path').textContent = data.path;
+                
+                // Si c'est shape qui est généré, on met à jour currentShpGenere et l'affichage des boutons
+                if (type === 'shape') {
+                    currentShpGenere = true;
+                    btn.textContent = "Générer";
+                    
+                    // Activer également le bouton KMZ qui était bloqué
+                    const btnKmz = document.getElementById('btn-kmz');
+                    if (btnKmz) {
+                        btnKmz.removeAttribute('disabled');
+                        btnKmz.removeAttribute('title');
+                        btnKmz.className = "text-brand-600 hover:text-white border border-brand-600 hover:bg-brand-600 font-medium text-xs py-1.5 px-3 rounded transition-colors";
+                        btnKmz.setAttribute('onclick', "genererEtude('kmz')");
+                    }
+                }
+                
+                // Reset bouton
+                setTimeout(() => {
+                    btn.innerHTML = originalContent;
+                    btn.disabled = false;
+                    if (type === 'shape') {
+                        btn.textContent = "Générer";
+                    }
+                }, 1500);
+            })
+            .catch(err => {
+                console.error(err);
+                alert("Une erreur s'est produite lors de la génération.");
+                btn.innerHTML = originalContent;
+                btn.disabled = false;
+            });
+    }
+
+    // ===== GÉNÉRATION DU PLAN PDS (Excel) =====
+    function _pdsEtape(etape) {
+        ['form', 'loading', 'succes', 'erreur'].forEach(e => {
+            const el = document.getElementById('pds-etape-' + e);
+            if (el) el.classList.toggle('hidden', e !== etape);
+        });
+        const footer = document.getElementById('pds-footer');
+        if (footer) footer.classList.toggle('hidden', etape !== 'form');
+    }
+    function ouvrirModalPds() {
+        _pdsEtape('form');
+        document.getElementById('modal-pds').classList.remove('hidden');
+    }
+    function fermerModalPds() {
+        document.getElementById('modal-pds').classList.add('hidden');
+        _pdsEtape('form');
+    }
+    function lancerGenerationPds() {
+        const nb_fo = parseInt(document.getElementById('pds-nb-fo').value, 10) || 2;
+        const capacite_defaut = parseInt(document.getElementById('pds-capacite').value, 10) || 48;
+        const commentaire = document.getElementById('pds-commentaire').value;
+        const t0 = Date.now();
+        _pdsEtape('loading');
+        fetch('/api/projets/{{ projet.id }}/generer-pds', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ nb_fo, capacite_defaut, commentaire })
+        })
+        .then(r => r.json().then(data => ({ ok: r.ok, data })))
+        .then(({ ok, data }) => {
+            if (!ok) throw new Error(data.detail || 'Génération impossible');
+            // Laisser la barre visible un court instant pour un rendu fluide
+            const reste = Math.max(0, 500 - (Date.now() - t0));
+            setTimeout(() => {
+                document.getElementById('pds-succes-msg').textContent =
+                    (data.nb_onglets || 0) + ' onglet(s) générés — un par boîte BPE.';
+                document.getElementById('pds-succes-path').textContent = data.path || '';
+                _pdsEtape('succes');
+                const res = document.getElementById('resultat-generation');
+                if (res) {
+                    res.classList.remove('hidden');
+                    const dp = document.getElementById('dossier-path');
+                    if (dp) dp.textContent = data.path;
+                }
+            }, reste);
+        })
+        .catch(err => {
+            console.error(err);
+            let msg = err.message || 'Erreur inconnue.';
+            if (/permission denied|used by another|being used|\[Errno 13\]/i.test(msg)) {
+                msg = "Le fichier PDS est ouvert dans Excel. Fermez-le puis réessayez.";
+            }
+            document.getElementById('pds-erreur-msg').textContent = msg;
+            _pdsEtape('erreur');
+        });
+    }
+</script>
+{% endblock %}
