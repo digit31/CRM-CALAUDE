@@ -13,6 +13,9 @@
     /* Style du panneau d'upload par drag & drop */
     .drop-zone { border: 2px dashed #cbd5e1; transition: all 0.2s; }
     .drop-zone.drag-over { border-color: #14b8a6; background: #f0fdfa; }
+
+    /* Marqueurs symbologie NETGEO (SVG) : pas de fond/bordure Leaflet par défaut */
+    .leaflet-div-icon.sty-marker { background: transparent; border: none; }
 </style>
 {% endblock %}
 
@@ -50,7 +53,7 @@
                     <path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                 </svg>
                 Couches SIG
-                <span class="ml-auto text-xs font-medium text-slate-400">{{ projet.couches|length }}</span>
+                <span class="ml-auto text-xs font-medium text-slate-400">{{ couches_affichees|length }}</span>
             </h3>
         </div>
         
@@ -92,7 +95,7 @@
 
         <!-- Liste des couches -->
         <div class="flex-1 overflow-y-auto p-3 space-y-2" id="layers-list">
-            {% for couche in projet.couches %}
+            {% for couche in couches_affichees %}
             <div class="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-200 hover:border-brand-300 transition group"
                  data-couche-id="{{ couche.id }}">
                 <div class="flex items-center gap-3">
@@ -101,7 +104,7 @@
                            data-couche-id="{{ couche.id }}"
                            data-couleur="{{ couche.couleur }}">
                     <div>
-                        <p class="text-sm font-semibold text-slate-800">{{ couche.nom }}</p>
+                        <p class="text-sm font-semibold text-slate-800">{{ couche.nom.replace('[Livrable] ', '') }}</p>
                         <p class="text-xs text-slate-400 mt-0.5">
                             {{ couche.type_geometrie }} &bull; {{ couche.nb_entites }} entités
                             &bull; EPSG:{{ couche.systeme_projection }}
@@ -109,6 +112,13 @@
                     </div>
                 </div>
                 <div class="flex items-center gap-2">
+                    {% if couches_etiquettes.get(couche.id) %}
+                    <button onclick="basculerLabels({{ couche.id }}, this)" data-lbl-couche="{{ couche.id }}" data-couche-base="{{ couche.nom.upper().replace('[LIVRABLE]','').strip() }}" class="lbl-toggle text-brand-600 hover:text-brand-700 transition" title="Masquer les étiquettes">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-5 5a2 2 0 01-2.828 0l-7-7A1.99 1.99 0 013 12V7a4 4 0 014-4z" />
+                        </svg>
+                    </button>
+                    {% endif %}
                     <button onclick="chargerAttributs({{ couche.id }})" class="text-slate-400 hover:text-brand-600 transition" title="Voir la table attributaire">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -144,6 +154,7 @@
                     Carte Interactive
                 </div>
             </button>
+            {% if not shp_genere %}
             <button onclick="switchTab('table-tab')" id="btn-table-tab" class="px-5 py-2 text-sm font-semibold rounded-md text-slate-500 hover:text-slate-700 transition">
                 <div class="flex items-center gap-2">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -152,6 +163,7 @@
                     Données Inputs
                 </div>
             </button>
+            {% endif %}
             {% if shp_genere %}
             <button onclick="switchTab('livrables-tab')" id="btn-livrables-tab" class="px-5 py-2 text-sm font-semibold rounded-md text-slate-500 hover:text-slate-700 transition flex items-center gap-2">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -337,7 +349,25 @@
 <style>
 @keyframes blinkBtn { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
 .btn-blink { animation: blinkBtn 0.9s ease-in-out infinite; }
+/* Étiquettes de couche sur la carte (mêmes libellés que les plans PDF) */
+.sty-lbl {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    font-size: 10px;
+    line-height: 1.05;
+    font-weight: 600;
+    white-space: nowrap;
+    text-shadow: -1px -1px 2px #fff, 1px -1px 2px #fff, -1px 1px 2px #fff,
+                 1px 1px 2px #fff, 0 0 2px #fff;
+    pointer-events: none;
+}
+.sty-lbl::before { display: none !important; }
 </style>
+<!-- Règles de masquage d'étiquettes par couche (injectées dynamiquement) -->
+<style id="lbl-styles"></style>
 <!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
@@ -374,6 +404,24 @@
         });
     });
 
+    // ===== SYMBOLOGIE NETGEO (formes des marqueurs, comme QGIS) =====
+    function _svgForme(forme, coul, cont, px) {
+        const s = px, c = s / 2, r = s / 2 - 1, stroke = cont || '#232323', sw = 1;
+        let inner;
+        if (forme === 'square')       inner = `<rect x="1.5" y="1.5" width="${s-3}" height="${s-3}" fill="${coul}" stroke="${stroke}" stroke-width="${sw}"/>`;
+        else if (forme === 'diamond') inner = `<polygon points="${c},1 ${s-1},${c} ${c},${s-1} 1,${c}" fill="${coul}" stroke="${stroke}" stroke-width="${sw}"/>`;
+        else if (forme === 'triangle')inner = `<polygon points="${c},1 ${s-1},${s-1} 1,${s-1}" fill="${coul}" stroke="${stroke}" stroke-width="${sw}"/>`;
+        else if (forme === 'cross')   inner = `<path d="M2,2 L${s-2},${s-2} M${s-2},2 L2,${s-2}" stroke="${coul}" stroke-width="3" stroke-linecap="round"/>`;
+        else if (forme === 'arrow')   inner = `<polygon points="${c},1 ${s-2},${c} ${c*1.35},${c} ${c*1.35},${s-1} ${c*0.65},${s-1} ${c*0.65},${c} 2,${c}" fill="${coul}" stroke="${stroke}" stroke-width="${sw}"/>`;
+        else                          inner = `<circle cx="${c}" cy="${c}" r="${r}" fill="${coul}" stroke="${stroke}" stroke-width="${sw}"/>`;
+        return `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" xmlns="http://www.w3.org/2000/svg">${inner}</svg>`;
+    }
+    function _iconeForme(sty) {
+        const px = Math.max(11, Math.round((sty.taille || 3) * 3.2));
+        return L.divIcon({ html: _svgForme(sty.forme, sty.coul, sty.cont, px),
+            className: 'sty-marker', iconSize: [px, px], iconAnchor: [px / 2, px / 2] });
+    }
+
     function chargerCouche(coucheId, couleur) {
         fetch('/api/projets/' + projetId + '/couches/' + coucheId + '/geojson')
             .then(r => r.json())
@@ -381,22 +429,43 @@
                 if (data.geojson) {
                     const geojsonData = JSON.parse(data.geojson);
                     const layer = L.geoJSON(geojsonData, {
-                        style: { color: couleur || data.couleur, weight: 2, opacity: 0.8, fillOpacity: 0.3 },
+                        style: function(feature) {
+                            const s = feature.properties && feature.properties._sty;
+                            if (s && s.g === 'ln') return { color: s.coul, weight: Math.max(1.5, (s.larg || 0.4) * 2.5), opacity: 1 };
+                            if (s && s.g === 'pg') return { color: s.cont, weight: 1.5, fill: false, dashArray: s.pointille ? '2,3' : null };
+                            return { color: couleur || data.couleur, weight: 2, opacity: 0.8, fillOpacity: 0.3 };
+                        },
                         pointToLayer: function(feature, latlng) {
+                            const s = feature.properties && feature.properties._sty;
+                            if (s && s.g === 'pt') return L.marker(latlng, { icon: _iconeForme(s) });
                             return L.circleMarker(latlng, {
                                 radius: 6, fillColor: couleur || data.couleur,
                                 color: '#fff', weight: 1, opacity: 1, fillOpacity: 0.8
                             });
                         },
                         onEachFeature: function(feature, layer) {
-                            // Popup avec les attributs au clic
                             if (feature.properties) {
                                 let popupContent = '<div class="text-xs">';
                                 for (const [key, value] of Object.entries(feature.properties)) {
+                                    if (key === '_sty') continue;   // style interne
                                     popupContent += '<b>' + key + '</b>: ' + (value || '—') + '<br>';
                                 }
                                 popupContent += '</div>';
                                 layer.bindPopup(popupContent);
+
+                                // Étiquette permanente (mêmes libellés que les plans PDF)
+                                const s = feature.properties._sty;
+                                if (s && s.lbl) {
+                                    const html = '<span style="color:' + (s.lc || '#222') + '">'
+                                        + _escLbl(s.lbl) + '</span>';
+                                    layer.bindTooltip(html, {
+                                        permanent: true,
+                                        direction: s.g === 'ln' ? 'center' : 'top',
+                                        offset: s.g === 'ln' ? [0, 0] : [0, -6],
+                                        className: 'sty-lbl lbl-c-' + coucheId,
+                                        opacity: 1
+                                    });
+                                }
                             }
                         }
                     }).addTo(map);
@@ -411,6 +480,50 @@
             })
             .catch(err => console.error('Erreur chargement couche:', err));
     }
+
+    // ===== ÉTIQUETTES DES COUCHES (afficher / masquer par couche) =====
+    // Les tooltips permanents portent la classe « lbl-c-<id> ». Masquer une
+    // couche = injecter une règle CSS display:none pour cette classe (persiste
+    // même si la couche est rechargée).
+    const labelsCaches = {};   // coucheId -> true si les étiquettes sont masquées
+
+    function _escLbl(t) {
+        return String(t)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/\n/g, '<br>');
+    }
+
+    function _majStyleLabels() {
+        let css = '';
+        for (const id in labelsCaches) {
+            if (labelsCaches[id]) css += '.lbl-c-' + id + '{display:none !important;}';
+        }
+        document.getElementById('lbl-styles').textContent = css;
+    }
+
+    function basculerLabels(coucheId, btn) {
+        labelsCaches[coucheId] = !labelsCaches[coucheId];
+        _majStyleLabels();
+        const affiche = !labelsCaches[coucheId];
+        btn.classList.toggle('text-brand-600', affiche);
+        btn.classList.toggle('text-slate-300', !affiche);
+        btn.title = affiche ? 'Masquer les étiquettes' : 'Afficher les étiquettes';
+    }
+
+    // À l'ouverture : n'afficher que les étiquettes PT et BPE ; les autres
+    // couches démarrent masquées (l'utilisateur les réaffiche d'un clic).
+    (function _initLabelsParDefaut() {
+        document.querySelectorAll('.lbl-toggle').forEach(function (btn) {
+            const base = (btn.dataset.coucheBase || '').toUpperCase();
+            if (base === 'PT' || base === 'BPE') return;   // affichées par défaut
+            const id = btn.dataset.lblCouche;
+            labelsCaches[id] = true;
+            btn.classList.remove('text-brand-600');
+            btn.classList.add('text-slate-300');
+            btn.title = 'Afficher les étiquettes';
+        });
+        _majStyleLabels();
+    })();
 
     // ===== DRAG & DROP UPLOAD =====
     const dropZone = document.getElementById('drop-zone');
@@ -604,10 +717,12 @@
         const activeClass = "px-5 py-2 text-sm font-semibold rounded-md bg-white text-brand-700 shadow-sm transition flex items-center gap-2";
         const inactiveClass = "px-5 py-2 text-sm font-semibold rounded-md text-slate-500 hover:text-slate-700 transition flex items-center gap-2";
 
-        btnMap.className = inactiveClass;
-        btnTable.className = inactiveClass;
-        btnLivrables.className = inactiveClass;
-        
+        // btnTable peut être absent (onglet « Données Inputs » masqué quand les
+        // livrables existent) : on garde tout null-safe.
+        if (btnMap) btnMap.className = inactiveClass;
+        if (btnTable) btnTable.className = inactiveClass;
+        if (btnLivrables) btnLivrables.className = inactiveClass;
+
         if (tableActions) {
             if (tabId === 'livrables-tab') {
                 tableActions.classList.remove('hidden');
@@ -621,20 +736,20 @@
         }
 
         if (tabId === 'map-tab') {
-            btnMap.className = activeClass;
+            if (btnMap) btnMap.className = activeClass;
             tabMap.classList.remove('hidden');
             tabMap.classList.add('flex');
             tabTable.classList.add('hidden');
             tabTable.classList.remove('flex');
             setTimeout(() => map.invalidateSize(), 100);
         } else if (tabId === 'table-tab') {
-            btnTable.className = activeClass;
+            if (btnTable) btnTable.className = activeClass;
             tabTable.classList.remove('hidden');
             tabTable.classList.add('flex');
             tabMap.classList.add('hidden');
             tabMap.classList.remove('flex');
         } else if (tabId === 'livrables-tab') {
-            btnLivrables.className = activeClass;
+            if (btnLivrables) btnLivrables.className = activeClass;
             tabTable.classList.remove('hidden');
             tabTable.classList.add('flex');
             tabMap.classList.add('hidden');

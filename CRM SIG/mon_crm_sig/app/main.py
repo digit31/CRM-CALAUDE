@@ -62,6 +62,12 @@ PDS_TEMPLATE = os.environ.get(
     _PDS_EXEMPLE if os.path.exists(_PDS_EXEMPLE) else _PDS_EMBED,
 )
 
+# Gabarit PowerPoint du livrable APD (plan global) : copié puis rempli par projet.
+APD_PPTX_TEMPLATE = os.environ.get(
+    "CRM_SIG_APD_PPTX",
+    os.path.join(_WORKSPACE_DIR, "EXEMPLE", "TEMPLATE APD PLAN GLOBAL", "APD_HTL_NOM PROJET.pptx"),
+)
+
 os.makedirs(os.path.join(STATIC_DIR, "css"), exist_ok=True)
 os.makedirs(os.path.join(STATIC_DIR, "js"), exist_ok=True)
 os.makedirs(PROJECTS_DATA_DIR, exist_ok=True)
@@ -96,10 +102,31 @@ def page_carte(request: Request, projet_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Projet non trouvé")
     
     shp_genere = any(c.nom.startswith("[Livrable]") for c in projet.couches)
+    # Affichage carte : couches INPUT tant qu'aucun livrable n'existe ; dès que le
+    # SHP livrable d'une couche est généré, on affiche la version « Édition
+    # Livrables » (source de vérité) à sa place — supprime le doublon
+    # input/livrable. Une couche input SANS jumeau livrable reste affichée
+    # (aucune donnée perdue).
+    bases_liv = _bases_livrables(projet)
+
+    def _affichee(c):
+        if (c.nom or "").strip().lower().startswith("[livrable]"):
+            return True  # les livrables (source de vérité) sont toujours affichés
+        base = (c.nom or "").upper().replace("[LIVRABLE]", "").strip()
+        return base not in bases_liv  # input affiché seulement sans jumeau livrable
+
+    couches_affichees = [c for c in projet.couches if _affichee(c)]
+    # Quelles couches portent les étiquettes (une seule par base : livrable si
+    # présent, sinon input) — pour n'afficher le bouton toggle que là où il agit.
+    couches_etiquettes = {
+        c.id: _couche_porte_etiquettes(projet, c, bases_liv) for c in couches_affichees
+    }
     return templates.TemplateResponse("map_view.html", {
         "request": request,
         "projet": projet,
         "shp_genere": shp_genere,
+        "couches_affichees": couches_affichees,
+        "couches_etiquettes": couches_etiquettes,
     })
 
 
@@ -128,6 +155,154 @@ def page_etudes(request: Request, projet_id: int, db: Session = Depends(get_db))
         "shp_genere": shp_genere,
         "dossier_existant": dossier_existant,
     })
+
+
+# =====================================================================
+# CONSOLE ÉTUDE : saisie des caractéristiques de la liaison (rapport APD)
+# =====================================================================
+
+def _chemin_console_json(projet) -> str:
+    """Fichier de persistance des données saisies dans la console (par projet)."""
+    dossier = os.path.join(projet.chemin_dossier, "02_Traitement")
+    os.makedirs(dossier, exist_ok=True)
+    return os.path.join(dossier, "console_etude.json")
+
+
+@app.get("/projets/{projet_id}/console", response_class=HTMLResponse)
+def page_console(request: Request, projet_id: int, db: Session = Depends(get_db)):
+    """Console Étude : écran de saisie des données du rapport (par projet)."""
+    projet = crm_service.obtenir_projet(db, projet_id)
+    if not projet:
+        raise HTTPException(status_code=404, detail="Projet non trouvé")
+    return templates.TemplateResponse("console.html", {
+        "request": request,
+        "projet": projet,
+    })
+
+
+@app.get("/api/projets/{projet_id}/console/donnees")
+def api_console_donnees(projet_id: int, recalc: int = 0, db: Session = Depends(get_db)):
+    """
+    Renvoie les données de la console : défauts auto-calculés depuis les SHP
+    livrables, fusionnés avec la dernière saisie (sauf ?recalc=1 = valeurs SHP
+    fraîches en écrasant les champs numériques déductibles).
+    """
+    from datetime import datetime
+    from app.reporting import apd_generator
+    import json as _json
+
+    projet = crm_service.obtenir_projet(db, projet_id)
+    if not projet:
+        raise HTTPException(status_code=404, detail="Projet non trouvé")
+
+    dossier_shape = _trouver_dossier_shape(projet)
+    date_str = datetime.utcnow().strftime("%d/%m/%Y")
+    ref = projet.reference or f"AFF_{projet.id}"
+    try:
+        defauts = apd_generator.calculer_synthese(dossier_shape, ref_projet=ref, date_str=date_str)
+    except Exception as e:
+        logger.warning(f"Console : calcul synthèse impossible ({e})")
+        defauts = {"cartouche": {"code_projet": ref.replace("-", "_"), "date_real": date_str,
+                                 "version": "V1", "type_etude": "APD HTL"},
+                   "souterrain": {}, "aerien": {}, "appuis": {}, "boites": {}, "infos": ""}
+
+    sauvegarde = {}
+    p = _chemin_console_json(projet)
+    if os.path.exists(p) and not recalc:
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                sauvegarde = _json.load(f)
+        except Exception as e:
+            logger.warning(f"Console : lecture sauvegarde impossible ({e})")
+
+    # Valeurs AUTO toujours recalculées depuis le SHP livrable (reflète l'état
+    # courant même après modification), saisies manuelles préservées.
+    donnees = apd_generator.fusionner_console(defauts, sauvegarde)
+    return JSONResponse({"donnees": donnees, "recalcule": bool(recalc),
+                         "a_sauvegarde": bool(sauvegarde)})
+
+
+@app.post("/api/projets/{projet_id}/console")
+async def api_console_sauver(projet_id: int, request: Request, db: Session = Depends(get_db)):
+    """Sauvegarde les données saisies dans la console (JSON par projet)."""
+    import json as _json
+    projet = crm_service.obtenir_projet(db, projet_id)
+    if not projet:
+        raise HTTPException(status_code=404, detail="Projet non trouvé")
+    try:
+        donnees = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Corps JSON invalide.")
+    try:
+        with open(_chemin_console_json(projet), "w", encoding="utf-8") as f:
+            _json.dump(donnees, f, ensure_ascii=False, indent=2)
+        return JSONResponse({"message": "Données de la console enregistrées."})
+    except Exception as e:
+        logger.error(f"Console : sauvegarde impossible projet {projet_id} ({e})")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def _dossier_apd_assets(projet):
+    d = os.path.join(projet.chemin_dossier, "02_Traitement", "apd_assets")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+@app.post("/api/projets/{projet_id}/apd-assets/plan_masse")
+async def api_apd_upload_plan_masse(projet_id: int, fichier: UploadFile = File(...),
+                                    db: Session = Depends(get_db)):
+    """Upload (drag&drop) du plan de masse BTS (image PNG/JPG ou PDF -> PNG),
+    intégré en slide 3 du livrable APD."""
+    import glob as _glob
+    projet = crm_service.obtenir_projet(db, projet_id)
+    if not projet:
+        raise HTTPException(status_code=404, detail="Projet non trouvé")
+    dossier = _dossier_apd_assets(projet)
+    for f in _glob.glob(os.path.join(dossier, "plan_masse.*")):
+        try:
+            os.remove(f)
+        except Exception:
+            pass
+    ext = os.path.splitext(fichier.filename or "")[1].lower()
+    data = await fichier.read()
+    try:
+        if ext == ".pdf":
+            import fitz
+            doc = fitz.open(stream=data, filetype="pdf")
+            cible = os.path.join(dossier, "plan_masse.png")
+            doc.load_page(0).get_pixmap(dpi=200).save(cible)
+        elif ext in (".png", ".jpg", ".jpeg"):
+            cible = os.path.join(dossier, "plan_masse" + ext)
+            with open(cible, "wb") as f:
+                f.write(data)
+        else:
+            raise HTTPException(status_code=400,
+                                detail="Format non supporté (PNG, JPG ou PDF).")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"APD plan de masse upload projet {projet_id} : {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    rel = os.path.relpath(cible, STATIC_DIR).replace("\\", "/")
+    url = "/static/" + rel if not rel.startswith("..") else None
+    return JSONResponse({"message": "Plan de masse enregistré.", "url": url})
+
+
+@app.delete("/api/projets/{projet_id}/apd-assets/plan_masse")
+def api_apd_clear_plan_masse(projet_id: int, db: Session = Depends(get_db)):
+    """Retire le plan de masse (l'APD sera généré sans slide 3)."""
+    import glob as _glob
+    projet = crm_service.obtenir_projet(db, projet_id)
+    if not projet:
+        raise HTTPException(status_code=404, detail="Projet non trouvé")
+    n = 0
+    for f in _glob.glob(os.path.join(_dossier_apd_assets(projet), "plan_masse.*")):
+        try:
+            os.remove(f)
+            n += 1
+        except Exception:
+            pass
+    return JSONResponse({"message": "Plan de masse retiré.", "supprimes": n})
 
 
 @app.get("/clients", response_class=HTMLResponse)
@@ -218,8 +393,15 @@ async def api_creer_client(request: Request, db: Session = Depends(get_db)):
         crm_service.creer_client(db, nom, email, telephone, adresse)
         return RedirectResponse(url="/clients", status_code=303)
     except Exception as e:
-        logger.error(f"Erreur API creer_client: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        msg = str(e)
+        logger.error(f"Erreur API creer_client: {msg}")
+        # Doublon d'email : message clair (400) au lieu d'une erreur serveur (500).
+        if "UNIQUE constraint failed: clients.email" in msg:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Un client utilise déjà l'adresse e-mail « {email} ». "
+                       "Utilisez une autre adresse ou laissez le champ vide.")
+        raise HTTPException(status_code=500, detail=msg)
 
 @app.post("/api/clients/{client_id}/delete")
 def api_supprimer_client(client_id: int, db: Session = Depends(get_db)):
@@ -429,6 +611,34 @@ def _resoudre_shp_livrable(projet, couche) -> str:
         return couche.chemin_fichier
     p_liv = os.path.join(_trouver_dossier_shape(projet), f"{base}.shp")
     return p_liv if os.path.exists(p_liv) else couche.chemin_fichier
+
+
+def _bases_livrables(projet) -> set:
+    """Noms de base (sans préfixe) des couches disposant d'une version [Livrable]."""
+    s = set()
+    for c in projet.couches:
+        if (c.nom or "").strip().lower().startswith("[livrable]"):
+            s.add(c.nom.upper().replace("[LIVRABLE]", "").strip())
+    return s
+
+
+def _couche_porte_etiquettes(projet, couche, bases_liv=None) -> bool:
+    """True si cette couche est la PROPRIÉTAIRE des étiquettes carte pour sa base.
+
+    Une couche input et son jumeau [Livrable] portent la même géométrie/mêmes
+    libellés : pour éviter le double affichage (et un toggle qui ne masque qu'un
+    des deux), seule une couche « porte » les étiquettes — la [Livrable] (source
+    de vérité) si elle existe, sinon la couche input elle-même."""
+    from app.gis import symbologie as _symb
+    nom = couche.nom or ""
+    if not _symb.est_stylee(nom):
+        return False
+    if nom.strip().lower().startswith("[livrable]"):
+        return True
+    base = nom.upper().replace("[LIVRABLE]", "").strip()
+    if bases_liv is None:
+        bases_liv = _bases_livrables(projet)
+    return base not in bases_liv
 
 
 def _chemin_shp_edition(db, projet, couche) -> str:
@@ -761,7 +971,33 @@ def api_obtenir_geojson(projet_id: int, couche_id: int, db: Session = Depends(ge
         chemin = _resoudre_shp_livrable(projet, couche) if projet else couche.chemin_fichier
         gdf = gis_handler.lire_shapefile(chemin)
         geojson_str = gis_handler.convertir_en_geojson(gdf)
-        return JSONResponse(content={"geojson": geojson_str, "couleur": couche.couleur})
+
+        # Symbologie NETGEO : on injecte un style par entité (mêmes couleurs/formes
+        # que les plans et QGIS) pour que la carte du CRM affiche le vrai style.
+        from app.gis import symbologie as symb
+        base = couche.nom.upper().replace("[LIVRABLE]", "").strip()
+        stylee = symb.est_stylee(base)
+        # Seule la couche « propriétaire » (livrable si présent, sinon input)
+        # porte les étiquettes, pour éviter les libellés dessinés en double.
+        porte_etiq = _couche_porte_etiquettes(projet, couche) if projet else stylee
+        if stylee:
+            import json as _json
+            gj = _json.loads(geojson_str)
+            feats = gj.get("features", [])
+            for i, (_, row) in enumerate(gdf.iterrows()):
+                if i < len(feats):
+                    try:
+                        sty = symb.style_web(base, row)
+                        if sty and not porte_etiq:
+                            sty.pop("lbl", None)
+                            sty.pop("lc", None)
+                        feats[i].setdefault("properties", {})["_sty"] = sty
+                    except Exception:
+                        pass
+            geojson_str = _json.dumps(gj)
+
+        return JSONResponse(content={"geojson": geojson_str, "couleur": couche.couleur,
+                                     "stylee": stylee})
     except Exception as e:
         logger.error(f"Erreur GeoJSON couche #{couche_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -896,16 +1132,70 @@ def api_generer_etude(projet_id: int, type_etude: str, mode: str = "overwrite", 
             message = "Arborescence globale DOE générée avec succès."
 
         elif type_etude == "rapport":
-            open(os.path.join(dossier_global, f"APD_HTL_{ref_propre}_02_{date_str}.pdf"), "a").close()
-            message = "Rapport Principal (PDF) généré."
+            # Plan APD (livrable global) : copie du template PowerPoint rempli
+            # depuis les SHP livrables + la Console Étude, puis export PPTX -> PDF.
+            from app.reporting import apd_generator, apd_pptx, plan_generator
+            import json as _json, glob as _glob
+            dossier_shape = _trouver_dossier_shape(projet)
+            defauts = apd_generator.calculer_synthese(
+                dossier_shape, ref_projet=(projet.reference or f"AFF_{projet.id}"),
+                date_str=datetime.utcnow().strftime("%d/%m/%Y"))
+            p_json = _chemin_console_json(projet)
+            sauvegarde = {}
+            if os.path.exists(p_json):
+                try:
+                    with open(p_json, "r", encoding="utf-8") as f:
+                        sauvegarde = _json.load(f)
+                except Exception:
+                    sauvegarde = {}
+            # Auto recalculé depuis le SHP livrable + saisies manuelles préservées.
+            donnees = apd_generator.fusionner_console(defauts, sauvegarde)
+
+            # Assets uploadés (plan de masse ; override éventuel du plan général)
+            dossier_assets = os.path.join(projet.chemin_dossier, "02_Traitement", "apd_assets")
+
+            def _asset(prefixe):
+                for f in _glob.glob(os.path.join(dossier_assets, prefixe + ".*")):
+                    if f.lower().endswith((".png", ".jpg", ".jpeg")):
+                        return f
+                return None
+
+            plan_masse = _asset("plan_masse")
+            plan_general = _asset("plan_general")
+            if not plan_general:
+                # Page 1 = plan APS/APD généré 100 % backend (fond Plan IGN +
+                # symbologie NETGEO exacte), sans aucune dépendance QGIS.
+                plan_general = os.path.join(dossier_global, f"plan_general_{ref_propre}.png")
+                try:
+                    plan_generator.generer_plan_apd(dossier_shape, plan_general)
+                except Exception as e:
+                    logger.warning(f"Plan général APD non généré ({e})")
+                    plan_general = None
+
+            if not os.path.exists(APD_PPTX_TEMPLATE):
+                raise HTTPException(status_code=400,
+                                    detail=f"Template PPTX APD introuvable : {APD_PPTX_TEMPLATE}")
+            chemin_pdf = os.path.join(dossier_global, f"APD_HTL_{ref_propre}_02_{date_str}.pdf")
+            apd_pptx.generer_apd_plan(APD_PPTX_TEMPLATE, donnees, dossier_shape, chemin_pdf,
+                                      plan_general=plan_general, plan_masse=plan_masse)
+            message = "Plan APD (PPTX → PDF) généré."
             
         elif type_etude == "pds":
             open(os.path.join(dossier_global, f"PDS_{ref_propre}_{date_str}.xlsx"), "a").close()
             message = "Plan de Câblage (XLSX) généré."
             
         elif type_etude == "syno":
-            open(os.path.join(dossier_global, f"SYNO_{ref_propre}_{date_str}.pdf"), "a").close()
-            message = "Plan Synoptique (PDF) généré."
+            # Plan Synoptique (design ENSIO) généré 100 % backend depuis les
+            # SHP LIVRABLES (source de vérité) — sans dépendance QGIS.
+            from app.reporting import plan_generator
+            import glob as _glob
+            dossier_shape = _trouver_dossier_shape(projet)
+            if not (os.path.isdir(dossier_shape) and _glob.glob(os.path.join(dossier_shape, "*.shp"))):
+                raise HTTPException(status_code=400,
+                                    detail="Veuillez d'abord générer les SHP livrables (Créer SHP).")
+            chemin_pdf = os.path.join(dossier_global, f"SYNO_{ref_propre}_{date_str}.pdf")
+            plan_generator.generer_plan_syno(dossier_shape, chemin_pdf)
+            message = "Plan Synoptique (PDF) généré depuis les SHP livrables."
             
         elif type_etude == "shape":
             dossier_modele = MODELE_SHAPE_DIR
@@ -954,7 +1244,7 @@ def api_generer_etude(projet_id: int, type_etude: str, mode: str = "overwrite", 
                     )
                     db.add(nouvelle_couche)
             db.commit()
-            
+
             message = f"Cartographie SHAPE générée ({len(fichiers)} fichiers)."
             
         elif type_etude == "kmz":
@@ -1021,7 +1311,26 @@ def api_generer_etude(projet_id: int, type_etude: str, mode: str = "overwrite", 
             details=message
         )
 
-        return JSONResponse({"message": message, "path": dossier_global})
+        reponse = {"message": message, "path": dossier_global}
+        # URL directe du livrable généré pour ouverture/téléchargement immédiat
+        # côté navigateur (projects_data est servi sous /static).
+        def _url_statique(chemin):
+            try:
+                rel = os.path.relpath(chemin, STATIC_DIR).replace("\\", "/")
+                return "/static/" + rel if not rel.startswith("..") else None
+            except Exception:
+                return None
+        if type_etude in ("syno", "rapport"):
+            u = _url_statique(chemin_pdf)
+            if u:
+                reponse["pdf_url"] = u
+        elif type_etude == "kmz":
+            u = _url_statique(dest_kmz)
+            if u:
+                reponse["kmz_url"] = u
+        return JSONResponse(reponse)
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Erreur generation etude {type_etude}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -1088,7 +1397,7 @@ async def api_sauvegarder_attributs(request: Request, projet_id: int, couche_id:
                 couche_existante.chemin_fichier = chemin_destination
                 db.commit()
                 nouvelle_couche_id = couche_existante.id
-                
+
             return JSONResponse({"message": "Modifications enregistrées en tant que nouveau Livrable !", "nouvelle_couche_id": nouvelle_couche_id})
             
     except Exception as e:

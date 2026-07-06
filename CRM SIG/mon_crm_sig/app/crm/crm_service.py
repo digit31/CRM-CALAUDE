@@ -138,6 +138,13 @@ def supprimer_projet(db: Session, projet_id: int) -> bool:
 def creer_client(db: Session, nom: str, email: str = None, telephone: str = None, adresse: str = None) -> models.Client:
     """Crée un nouveau client dans la base de données."""
     try:
+        # Normaliser les champs vides en NULL : email est UNIQUE, or deux chaînes
+        # vides '' entreraient en collision (contrainte UNIQUE), alors que
+        # plusieurs NULL sont autorisés (client sans email = cas courant).
+        email = (email or "").strip() or None
+        telephone = (telephone or "").strip() or None
+        adresse = (adresse or "").strip() or None
+        nom = (nom or "").strip()
         nouveau_client = models.Client(
             nom=nom,
             email=email,

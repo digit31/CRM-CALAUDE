@@ -18,11 +18,17 @@
 <div class="h-full flex flex-col max-w-7xl mx-auto">
     
     <!-- En-tête de page -->
-    <div class="mb-6 flex justify-between items-end">
+    <div class="mb-6 flex justify-between items-end gap-4">
         <div>
             <h2 class="text-2xl font-bold text-slate-800 tracking-tight">Catalogue des Études</h2>
             <p class="text-slate-500 mt-1 text-sm">Générez et consolidez les livrables normés pour chaque phase du projet.</p>
         </div>
+        <a href="/projets/{{ projet.id }}/console" class="flex-shrink-0 inline-flex items-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-900 text-white text-sm font-semibold rounded-lg shadow-sm transition">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+            Console Étude
+        </a>
     </div>
 
     <!-- Zone de notification succès -->
@@ -170,7 +176,7 @@
                                 <p class="text-xs text-slate-500">Document de synthèse (PDF)</p>
                             </div>
                         </div>
-                        <button onclick="genererEtude('rapport')" id="btn-rapport" class="text-brand-600 hover:text-white border border-brand-600 hover:bg-brand-600 font-medium text-xs py-1.5 px-3 rounded transition-colors">
+                        <button onclick="genererApd()" id="btn-rapport" class="text-brand-600 hover:text-white border border-brand-600 hover:bg-brand-600 font-medium text-xs py-1.5 px-3 rounded transition-colors">
                             Générer
                         </button>
                     </div>
@@ -206,7 +212,7 @@
                                 <p class="text-xs text-slate-500">Architecture réseau (PDF)</p>
                             </div>
                         </div>
-                        <button onclick="genererEtude('syno')" id="btn-syno" class="text-brand-600 hover:text-white border border-brand-600 hover:bg-brand-600 font-medium text-xs py-1.5 px-3 rounded transition-colors">
+                        <button onclick="genererSyno()" id="btn-syno" class="text-brand-600 hover:text-white border border-brand-600 hover:bg-brand-600 font-medium text-xs py-1.5 px-3 rounded transition-colors">
                             Générer
                         </button>
                     </div>
@@ -243,7 +249,7 @@
                             </div>
                         </div>
                         {% if shp_genere %}
-                        <button onclick="genererEtude('kmz')" id="btn-kmz" class="text-brand-600 hover:text-white border border-brand-600 hover:bg-brand-600 font-medium text-xs py-1.5 px-3 rounded transition-colors">
+                        <button onclick="genererKmz()" id="btn-kmz" class="text-brand-600 hover:text-white border border-brand-600 hover:bg-brand-600 font-medium text-xs py-1.5 px-3 rounded transition-colors">
                             Générer
                         </button>
                         {% else %}
@@ -475,12 +481,223 @@
         </div>
     </div>
 </div>
+
+<!-- Modal Génération KMZ -->
+<div id="modal-kmz" class="fixed inset-0 glass-bg hidden z-50 flex items-center justify-center animate-fadeIn p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col">
+        <div class="p-6 border-b border-slate-100 flex items-center gap-3 bg-brand-50/50 text-brand-800">
+            <div class="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center flex-shrink-0 text-brand-600">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            </div>
+            <div>
+                <h3 class="text-base font-bold text-slate-800">Cartographie KMZ</h3>
+                <p class="text-xs text-slate-500">Export Google Earth depuis les SHP livrables.</p>
+            </div>
+        </div>
+
+        <!-- Étape : chargement -->
+        <div id="kmz-etape-loading" class="p-8 flex flex-col items-center justify-center gap-4 text-center bg-white">
+            <div class="w-14 h-14 rounded-full bg-brand-50 flex items-center justify-center">
+                <svg class="animate-spin h-7 w-7 text-brand-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+            </div>
+            <div>
+                <p class="text-sm font-semibold text-slate-700">Génération du KMZ…</p>
+                <p class="text-xs text-slate-400 mt-1">Conversion des couches livrables en Google Earth</p>
+            </div>
+            <div class="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                <div class="pds-progress-bar h-full bg-brand-600 rounded-full"></div>
+            </div>
+        </div>
+
+        <!-- Étape : succès -->
+        <div id="kmz-etape-succes" class="hidden p-8 flex flex-col items-center justify-center gap-3 text-center bg-white animate-fadeIn">
+            <div class="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600">
+                <svg class="h-9 w-9" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+            </div>
+            <h3 class="text-base font-bold text-slate-800">KMZ généré</h3>
+            <p id="kmz-succes-msg" class="text-sm text-slate-500"></p>
+            <p id="kmz-succes-path" class="text-[11px] text-slate-400 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2 break-all w-full"></p>
+            <div class="flex gap-2 mt-2">
+                <button onclick="fermerModalKmz()" class="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 border border-slate-200 rounded-lg transition">Valider</button>
+                <button onclick="telechargerKmz()" class="px-5 py-2 text-xs font-semibold bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition shadow-sm flex items-center gap-1.5">
+                    <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                    Télécharger le KMZ
+                </button>
+            </div>
+        </div>
+
+        <!-- Étape : erreur -->
+        <div id="kmz-etape-erreur" class="hidden p-8 flex flex-col items-center justify-center gap-3 text-center bg-white animate-fadeIn">
+            <div class="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center text-red-600">
+                <svg class="h-9 w-9" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+            </div>
+            <h3 class="text-base font-bold text-slate-800">Génération impossible</h3>
+            <p id="kmz-erreur-msg" class="text-sm text-slate-500"></p>
+            <div class="flex gap-2 mt-2">
+                <button onclick="fermerModalKmz()" class="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 transition">Fermer</button>
+                <button onclick="genererKmz()" class="px-4 py-2 text-xs font-semibold bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition shadow-sm">Réessayer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Génération Plan Synoptique (PDF) -->
+<div id="modal-syno" class="fixed inset-0 glass-bg hidden z-50 flex items-center justify-center animate-fadeIn p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col">
+        <div class="p-6 border-b border-slate-100 flex items-center gap-3 bg-brand-50/50 text-brand-800">
+            <div class="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center flex-shrink-0 text-brand-600">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" /></svg>
+            </div>
+            <div>
+                <h3 class="text-base font-bold text-slate-800">Plan Synoptique (PDF)</h3>
+                <p class="text-xs text-slate-500">A3 paysage — design ENSIO, fond satellite.</p>
+            </div>
+        </div>
+
+        <!-- Étape : chargement -->
+        <div id="syno-etape-loading" class="p-8 flex flex-col items-center justify-center gap-4 text-center bg-white">
+            <div class="w-14 h-14 rounded-full bg-brand-50 flex items-center justify-center">
+                <svg class="animate-spin h-7 w-7 text-brand-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+            </div>
+            <div>
+                <p class="text-sm font-semibold text-slate-700">Génération du Plan Synoptique…</p>
+                <p class="text-xs text-slate-400 mt-1">Fond satellite, câbles, boîtes, cartouche et légende</p>
+            </div>
+            <div class="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                <div class="pds-progress-bar h-full bg-brand-600 rounded-full"></div>
+            </div>
+        </div>
+
+        <!-- Étape : succès -->
+        <div id="syno-etape-succes" class="hidden p-8 flex flex-col items-center justify-center gap-3 text-center bg-white animate-fadeIn">
+            <div class="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600">
+                <svg class="h-9 w-9" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+            </div>
+            <h3 class="text-base font-bold text-slate-800">Plan Synoptique généré</h3>
+            <p id="syno-succes-msg" class="text-sm text-slate-500"></p>
+            <p id="syno-succes-path" class="text-[11px] text-slate-400 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2 break-all w-full"></p>
+            <div class="flex gap-2 mt-2">
+                <button onclick="fermerModalSyno()" class="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 border border-slate-200 rounded-lg transition">Valider</button>
+                <button onclick="ouvrirPdfSyno()" class="px-5 py-2 text-xs font-semibold bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition shadow-sm flex items-center gap-1.5">
+                    <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                    Ouvrir le PDF
+                </button>
+            </div>
+        </div>
+
+        <!-- Étape : erreur -->
+        <div id="syno-etape-erreur" class="hidden p-8 flex flex-col items-center justify-center gap-3 text-center bg-white animate-fadeIn">
+            <div class="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center text-red-600">
+                <svg class="h-9 w-9" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+            </div>
+            <h3 class="text-base font-bold text-slate-800">Génération impossible</h3>
+            <p id="syno-erreur-msg" class="text-sm text-slate-500"></p>
+            <div class="flex gap-2 mt-2">
+                <button onclick="fermerModalSyno()" class="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 transition">Fermer</button>
+                <button onclick="genererSyno()" class="px-4 py-2 text-xs font-semibold bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition shadow-sm">Réessayer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Génération Plan APD (PPTX -> PDF) -->
+<div id="modal-apd" class="fixed inset-0 glass-bg hidden z-50 flex items-center justify-center animate-fadeIn p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col">
+        <div class="p-6 border-b border-slate-100 flex items-center gap-3 bg-brand-50/50 text-brand-800">
+            <div class="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center flex-shrink-0 text-brand-600">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+            </div>
+            <div>
+                <h3 class="text-base font-bold text-slate-800">Plan APD (PDF)</h3>
+                <p class="text-xs text-slate-500">Template rempli + plan (fond Plan IGN).</p>
+            </div>
+        </div>
+
+        <!-- Étape : choix BTS / plan de masse (drag&drop) -->
+        <div id="apd-etape-choix" class="p-6 space-y-4 bg-white text-sm text-slate-600">
+            <p class="font-semibold text-slate-700">S'agit-il d'un site <b>BTS</b> avec un <b>plan de masse</b> à intégrer (page 3) ?</p>
+            <div id="apd-choix-boutons" class="grid grid-cols-2 gap-3">
+                <button onclick="apdChoixBts(true)" class="p-3 rounded-xl border border-slate-200 hover:border-brand-500 hover:bg-brand-50/40 transition text-left">
+                    <div class="font-bold text-slate-800 text-xs flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-brand-500"></span>Oui — ajouter le plan de masse</div>
+                    <p class="text-[11px] text-slate-400 mt-1">Glissez la photo/plan (PNG, JPG ou PDF).</p>
+                </button>
+                <button onclick="apdChoixBts(false)" class="p-3 rounded-xl border border-slate-200 hover:border-slate-400 hover:bg-slate-50 transition text-left">
+                    <div class="font-bold text-slate-800 text-xs flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-slate-400"></span>Non — générer directement</div>
+                    <p class="text-[11px] text-slate-400 mt-1">Sans plan de masse (page 3 supprimée).</p>
+                </button>
+            </div>
+            <div id="apd-dropzone-wrap" class="hidden space-y-3">
+                <div id="apd-dropzone" class="apd-drop rounded-xl p-6 text-center cursor-pointer">
+                    <svg class="h-8 w-8 mx-auto text-slate-300 mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.9A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+                    <p class="text-xs text-slate-500">Glissez le plan de masse ici, ou cliquez</p>
+                    <p class="text-[11px] text-slate-400 mt-0.5">PNG, JPG ou PDF</p>
+                    <input type="file" id="apd-file" class="hidden" accept="image/png,image/jpeg,application/pdf">
+                </div>
+                <div id="apd-preview" class="hidden text-center">
+                    <img id="apd-preview-img" class="max-h-40 mx-auto rounded-lg border border-slate-200" alt="aperçu">
+                    <p id="apd-preview-nom" class="text-[11px] text-emerald-600 mt-1 font-medium"></p>
+                </div>
+                <p id="apd-upload-msg" class="text-xs text-slate-400"></p>
+                <div class="flex justify-end gap-2">
+                    <button onclick="apdRetourChoix()" class="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 transition">Retour</button>
+                    <button id="apd-btn-generer" onclick="apdLancer()" disabled class="px-5 py-2 text-xs font-semibold bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition shadow-sm disabled:opacity-40 disabled:cursor-not-allowed">Générer</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Étape : chargement -->
+        <div id="apd-etape-loading" class="hidden p-8 flex flex-col items-center justify-center gap-4 text-center bg-white">
+            <div class="w-14 h-14 rounded-full bg-brand-50 flex items-center justify-center">
+                <svg class="animate-spin h-7 w-7 text-brand-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+            </div>
+            <div>
+                <p class="text-sm font-semibold text-slate-700">Génération du Plan APD…</p>
+                <p class="text-xs text-slate-400 mt-1">Plan (fond Plan IGN) généré depuis les SHP, remplissage du template, export PDF — ~15 à 30 s</p>
+            </div>
+            <div class="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                <div class="pds-progress-bar h-full bg-brand-600 rounded-full"></div>
+            </div>
+        </div>
+
+        <!-- Étape : succès -->
+        <div id="apd-etape-succes" class="hidden p-8 flex flex-col items-center justify-center gap-3 text-center bg-white animate-fadeIn">
+            <div class="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600">
+                <svg class="h-9 w-9" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+            </div>
+            <h3 class="text-base font-bold text-slate-800">Plan APD généré</h3>
+            <p id="apd-succes-msg" class="text-sm text-slate-500"></p>
+            <p id="apd-succes-path" class="text-[11px] text-slate-400 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2 break-all w-full"></p>
+            <div class="flex gap-2 mt-2">
+                <button onclick="fermerModalApd()" class="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 border border-slate-200 rounded-lg transition">Terminer</button>
+                <button onclick="ouvrirPdfApd()" class="px-5 py-2 text-xs font-semibold bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition shadow-sm flex items-center gap-1.5">
+                    <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                    Ouvrir le PDF
+                </button>
+            </div>
+        </div>
+
+        <!-- Étape : erreur -->
+        <div id="apd-etape-erreur" class="hidden p-8 flex flex-col items-center justify-center gap-3 text-center bg-white animate-fadeIn">
+            <div class="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center text-red-600">
+                <svg class="h-9 w-9" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+            </div>
+            <h3 class="text-base font-bold text-slate-800">Génération impossible</h3>
+            <p id="apd-erreur-msg" class="text-sm text-slate-500"></p>
+            <div class="flex gap-2 mt-2">
+                <button onclick="fermerModalApd()" class="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 transition">Fermer</button>
+                <button onclick="genererApd()" class="px-4 py-2 text-xs font-semibold bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition shadow-sm">Réessayer</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts_extra %}
 <style>
 @keyframes pdsProgress { 0% { transform: translateX(-120%); } 100% { transform: translateX(320%); } }
 .pds-progress-bar { width: 35%; animation: pdsProgress 1.1s ease-in-out infinite; }
+.apd-drop { border: 2px dashed #cbd5e1; transition: all 0.2s; }
+.apd-drop:hover, .apd-drop.drag-over { border-color: #14b8a6; background: #f0fdfa; }
 </style>
 <script>
     function switchTab(tabId, btnElement) {
@@ -543,13 +760,18 @@
         btn.disabled = true;
 
         fetch('/api/projets/{{ projet.id }}/generer-etude/' + type + '?mode=' + mode, { method: 'POST' })
-            .then(r => r.json())
-            .then(data => {
-                if(data.error) { throw new Error(data.error); }
-                
+            .then(r => r.json().then(data => ({ ok: r.ok, data })))
+            .then(({ ok, data }) => {
+                if(!ok || data.error) { throw new Error(data.detail || data.error || 'Erreur inconnue'); }
+
                 // Afficher le message de succès
                 document.getElementById('resultat-generation').classList.remove('hidden');
                 document.getElementById('dossier-path').textContent = data.path;
+
+                // Plan Synoptique : ouvrir immédiatement le PDF généré
+                if (data.pdf_url) {
+                    window.open(data.pdf_url + '?_t=' + Date.now(), '_blank');
+                }
                 
                 // Si c'est shape qui est généré, on met à jour currentShpGenere et l'affichage des boutons
                 if (type === 'shape') {
@@ -562,7 +784,7 @@
                         btnKmz.removeAttribute('disabled');
                         btnKmz.removeAttribute('title');
                         btnKmz.className = "text-brand-600 hover:text-white border border-brand-600 hover:bg-brand-600 font-medium text-xs py-1.5 px-3 rounded transition-colors";
-                        btnKmz.setAttribute('onclick', "genererEtude('kmz')");
+                        btnKmz.setAttribute('onclick', "genererKmz()");
                     }
                 }
                 
@@ -577,10 +799,214 @@
             })
             .catch(err => {
                 console.error(err);
-                alert("Une erreur s'est produite lors de la génération.");
+                alert("Erreur lors de la génération : " + (err.message || err));
                 btn.innerHTML = originalContent;
                 btn.disabled = false;
             });
+    }
+
+    // ===== GÉNÉRATION DU PLAN APD (PPTX -> PDF) =====
+    let apdUrl = null;
+    let apdPlanMassePret = false;
+
+    function _apdEtape(etape) {
+        ['choix', 'loading', 'succes', 'erreur'].forEach(e => {
+            const el = document.getElementById('apd-etape-' + e);
+            if (el) el.classList.toggle('hidden', e !== etape);
+        });
+    }
+
+    // 1) ouverture : on demande d'abord le choix BTS / plan de masse
+    function genererApd() {
+        apdUrl = null;
+        apdPlanMassePret = false;
+        document.getElementById('apd-choix-boutons').classList.remove('hidden');
+        document.getElementById('apd-dropzone-wrap').classList.add('hidden');
+        document.getElementById('apd-preview').classList.add('hidden');
+        document.getElementById('apd-upload-msg').textContent = '';
+        document.getElementById('apd-btn-generer').disabled = true;
+        _apdEtape('choix');
+        document.getElementById('modal-apd').classList.remove('hidden');
+    }
+
+    function apdChoixBts(oui) {
+        if (oui) {
+            // Oui : afficher le drag&drop
+            document.getElementById('apd-choix-boutons').classList.add('hidden');
+            document.getElementById('apd-dropzone-wrap').classList.remove('hidden');
+            _apdBrancherDropzone();
+        } else {
+            // Non : on retire un éventuel plan de masse puis on génère directement
+            fetch('/api/projets/{{ projet.id }}/apd-assets/plan_masse', { method: 'DELETE' })
+                .catch(() => {})
+                .finally(() => apdLancer());
+        }
+    }
+
+    function apdRetourChoix() {
+        document.getElementById('apd-choix-boutons').classList.remove('hidden');
+        document.getElementById('apd-dropzone-wrap').classList.add('hidden');
+    }
+
+    let _apdDropBranche = false;
+    function _apdBrancherDropzone() {
+        const dz = document.getElementById('apd-dropzone');
+        const inp = document.getElementById('apd-file');
+        if (_apdDropBranche) return;
+        _apdDropBranche = true;
+        dz.addEventListener('click', () => inp.click());
+        inp.addEventListener('change', () => { if (inp.files[0]) _apdUploadPlanMasse(inp.files[0]); });
+        ['dragover', 'dragenter'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('drag-over'); }));
+        ['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('drag-over'); }));
+        dz.addEventListener('drop', e => { if (e.dataTransfer.files[0]) _apdUploadPlanMasse(e.dataTransfer.files[0]); });
+    }
+
+    function _apdUploadPlanMasse(file) {
+        const msg = document.getElementById('apd-upload-msg');
+        msg.className = 'text-xs text-slate-400';
+        msg.textContent = 'Envoi de « ' + file.name + ' »…';
+        const fd = new FormData();
+        fd.append('fichier', file);
+        fetch('/api/projets/{{ projet.id }}/apd-assets/plan_masse', { method: 'POST', body: fd })
+            .then(r => r.json().then(d => ({ ok: r.ok, d })))
+            .then(({ ok, d }) => {
+                if (!ok) throw new Error(d.detail || 'Envoi impossible');
+                apdPlanMassePret = true;
+                document.getElementById('apd-btn-generer').disabled = false;
+                const prev = document.getElementById('apd-preview');
+                prev.classList.remove('hidden');
+                document.getElementById('apd-preview-img').src = (d.url || '') + '?_t=' + Date.now();
+                document.getElementById('apd-preview-nom').textContent = '✓ ' + file.name;
+                msg.className = 'text-xs text-emerald-600';
+                msg.textContent = 'Plan de masse validé — cliquez sur Générer.';
+            })
+            .catch(err => {
+                msg.className = 'text-xs text-red-500';
+                msg.textContent = 'Erreur : ' + err.message;
+            });
+    }
+
+    // 2) génération effective
+    function apdLancer() {
+        apdUrl = null;
+        _apdEtape('loading');
+
+        fetch('/api/projets/{{ projet.id }}/generer-etude/rapport?mode=overwrite', { method: 'POST' })
+            .then(r => r.json().then(data => ({ ok: r.ok, data })))
+            .then(({ ok, data }) => {
+                if (!ok || data.error) { throw new Error(data.detail || data.error || 'Erreur inconnue'); }
+                apdUrl = data.pdf_url || null;
+                document.getElementById('apd-succes-msg').textContent = data.message || 'Le Plan APD a été généré.';
+                document.getElementById('apd-succes-path').textContent = data.path || '';
+                _apdEtape('succes');
+                document.getElementById('resultat-generation').classList.remove('hidden');
+                document.getElementById('dossier-path').textContent = data.path || '';
+            })
+            .catch(err => {
+                console.error(err);
+                document.getElementById('apd-erreur-msg').textContent = err.message || String(err);
+                _apdEtape('erreur');
+            });
+    }
+
+    function ouvrirPdfApd() {
+        if (apdUrl) {
+            window.open(apdUrl + '?_t=' + Date.now(), '_blank');
+        }
+        fermerModalApd();
+    }
+
+    function fermerModalApd() {
+        document.getElementById('modal-apd').classList.add('hidden');
+    }
+
+    // ===== GÉNÉRATION DU KMZ =====
+    let kmzUrl = null;
+
+    function _kmzEtape(etape) {
+        ['loading', 'succes', 'erreur'].forEach(e => {
+            const el = document.getElementById('kmz-etape-' + e);
+            if (el) el.classList.toggle('hidden', e !== etape);
+        });
+    }
+
+    function genererKmz() {
+        kmzUrl = null;
+        _kmzEtape('loading');
+        document.getElementById('modal-kmz').classList.remove('hidden');
+
+        fetch('/api/projets/{{ projet.id }}/generer-etude/kmz?mode=overwrite', { method: 'POST' })
+            .then(r => r.json().then(data => ({ ok: r.ok, data })))
+            .then(({ ok, data }) => {
+                if (!ok || data.error) { throw new Error(data.detail || data.error || 'Erreur inconnue'); }
+                kmzUrl = data.kmz_url || null;
+                document.getElementById('kmz-succes-msg').textContent = data.message || 'Le KMZ a été généré depuis les SHP livrables.';
+                document.getElementById('kmz-succes-path').textContent = data.path || '';
+                _kmzEtape('succes');
+                document.getElementById('resultat-generation').classList.remove('hidden');
+                document.getElementById('dossier-path').textContent = data.path || '';
+            })
+            .catch(err => {
+                console.error(err);
+                document.getElementById('kmz-erreur-msg').textContent = err.message || String(err);
+                _kmzEtape('erreur');
+            });
+    }
+
+    function telechargerKmz() {
+        if (kmzUrl) {
+            window.open(kmzUrl + '?_t=' + Date.now(), '_blank');
+        }
+        fermerModalKmz();
+    }
+
+    function fermerModalKmz() {
+        document.getElementById('modal-kmz').classList.add('hidden');
+    }
+
+    // ===== GÉNÉRATION DU PLAN SYNOPTIQUE (PDF) =====
+    let synoPdfUrl = null;
+
+    function _synoEtape(etape) {
+        ['loading', 'succes', 'erreur'].forEach(e => {
+            const el = document.getElementById('syno-etape-' + e);
+            if (el) el.classList.toggle('hidden', e !== etape);
+        });
+    }
+
+    function genererSyno() {
+        synoPdfUrl = null;
+        _synoEtape('loading');
+        document.getElementById('modal-syno').classList.remove('hidden');
+
+        fetch('/api/projets/{{ projet.id }}/generer-etude/syno?mode=overwrite', { method: 'POST' })
+            .then(r => r.json().then(data => ({ ok: r.ok, data })))
+            .then(({ ok, data }) => {
+                if (!ok || data.error) { throw new Error(data.detail || data.error || 'Erreur inconnue'); }
+                synoPdfUrl = data.pdf_url || null;
+                document.getElementById('syno-succes-msg').textContent = data.message || 'Le plan a été généré depuis les SHP livrables.';
+                document.getElementById('syno-succes-path').textContent = data.path || '';
+                _synoEtape('succes');
+                // Rafraîchir l'encadré de résultat de la page
+                document.getElementById('resultat-generation').classList.remove('hidden');
+                document.getElementById('dossier-path').textContent = data.path || '';
+            })
+            .catch(err => {
+                console.error(err);
+                document.getElementById('syno-erreur-msg').textContent = err.message || String(err);
+                _synoEtape('erreur');
+            });
+    }
+
+    function ouvrirPdfSyno() {
+        if (synoPdfUrl) {
+            window.open(synoPdfUrl + '?_t=' + Date.now(), '_blank');
+        }
+        fermerModalSyno();
+    }
+
+    function fermerModalSyno() {
+        document.getElementById('modal-syno').classList.add('hidden');
     }
 
     // ===== GÉNÉRATION DU PLAN PDS (Excel) =====

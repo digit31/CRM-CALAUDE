@@ -9,3 +9,7 @@ jinja2
 python-multipart
 fpdf2
 openpyxl
+matplotlib
+pymupdf
+python-pptx
+pywin32 ; platform_system == "Windows"
