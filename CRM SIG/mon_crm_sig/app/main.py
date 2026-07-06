@@ -154,6 +154,7 @@ def page_etudes(request: Request, projet_id: int, db: Session = Depends(get_db))
         "projet": projet,
         "shp_genere": shp_genere,
         "dossier_existant": dossier_existant,
+        "shapes_a_maj": _shapes_a_maj(projet),
     })
 
 
@@ -166,6 +167,38 @@ def _chemin_console_json(projet) -> str:
     dossier = os.path.join(projet.chemin_dossier, "02_Traitement")
     os.makedirs(dossier, exist_ok=True)
     return os.path.join(dossier, "console_etude.json")
+
+
+# --- Drapeau « Shapes à mettre à jour » -----------------------------------
+# Posé dès qu'une modification est enregistrée dans « Édition Livrables »
+# (attributs / suppression d'entité). Tant qu'il est présent, la page Études
+# affiche « MAJ Shapes » en avant et désactive les autres générations ; il est
+# effacé quand la Cartographie SHP est (re)générée.
+def _chemin_flag_maj(projet) -> str:
+    dossier = os.path.join(projet.chemin_dossier, "02_Traitement")
+    os.makedirs(dossier, exist_ok=True)
+    return os.path.join(dossier, "shapes_a_maj.flag")
+
+
+def _marquer_shapes_a_maj(projet):
+    try:
+        with open(_chemin_flag_maj(projet), "w", encoding="utf-8") as f:
+            f.write("1")
+    except Exception as e:
+        logger.warning(f"Drapeau MAJ shapes non posé (projet {projet.id}) : {e}")
+
+
+def _effacer_shapes_a_maj(projet):
+    try:
+        p = _chemin_flag_maj(projet)
+        if os.path.exists(p):
+            os.remove(p)
+    except Exception as e:
+        logger.warning(f"Drapeau MAJ shapes non effacé (projet {projet.id}) : {e}")
+
+
+def _shapes_a_maj(projet) -> bool:
+    return os.path.exists(_chemin_flag_maj(projet))
 
 
 @app.get("/projets/{projet_id}/console", response_class=HTMLResponse)
@@ -1316,6 +1349,7 @@ def api_generer_etude(projet_id: int, type_etude: str, mode: str = "overwrite", 
                     )
                     db.add(nouvelle_couche)
             db.commit()
+            _effacer_shapes_a_maj(projet)  # Shapes à jour -> déverrouille les livrables
 
             message = f"Cartographie SHAPE générée ({len(fichiers)} fichiers)."
             
@@ -1432,6 +1466,7 @@ async def api_sauvegarder_attributs(request: Request, projet_id: int, couche_id:
             gis_handler.sauvegarder_attributs(chemin, chemin, nouvelles_donnees)
             couche.nb_entites = len(nouvelles_donnees)
             db.commit()
+            _marquer_shapes_a_maj(projet)  # Édition livrable -> MAJ Shapes requise
             return JSONResponse({"message": "Attributs du livrable sauvegardés avec succès."})
         else:
             # C'est un input ! On sauvegarde dans le dossier Traitement
@@ -1470,6 +1505,7 @@ async def api_sauvegarder_attributs(request: Request, projet_id: int, couche_id:
                 db.commit()
                 nouvelle_couche_id = couche_existante.id
 
+            _marquer_shapes_a_maj(projet)  # Édition livrable -> MAJ Shapes requise
             return JSONResponse({"message": "Modifications enregistrées en tant que nouveau Livrable !", "nouvelle_couche_id": nouvelle_couche_id})
             
     except Exception as e:
@@ -1518,6 +1554,7 @@ def api_supprimer_entite(projet_id: int, couche_id: int, ligne: int,
             details=f"Entite supprimee de {couche.nom} (reste {len(gdf)})"
         )
         db.commit()
+        _marquer_shapes_a_maj(projet)  # Édition livrable -> MAJ Shapes requise
         return JSONResponse({"message": "Entité supprimée du livrable.",
                              "nb_restant": len(gdf)})
     except HTTPException:
