@@ -95,9 +95,12 @@ Tableau de Bord
                 <tbody class="divide-y divide-slate-100">
                     {% for projet in projets %}
                     <tr class="hover:bg-slate-50/50 transition-colors group">
-                        <td class="px-6 py-4 text-xs font-mono text-slate-400">{{ projet.reference or ("#%04d" % projet.id) }}</td>
-                        <td class="px-6 py-4">
-                            <p class="font-semibold text-slate-900 text-sm">{{ projet.nom }}</p>
+                        <td class="px-6 py-4 text-xs font-mono text-slate-400 cursor-pointer" onclick="ouvrirResumeProjet({{ projet.id }})">{{ projet.reference or ("#%04d" % projet.id) }}</td>
+                        <td class="px-6 py-4 cursor-pointer" onclick="ouvrirResumeProjet({{ projet.id }})" title="Consulter le résumé de l'affaire">
+                            <p class="font-semibold text-slate-900 text-sm group-hover:text-brand-700 transition-colors flex items-center gap-1.5">
+                                {{ projet.nom }}
+                                <svg class="h-3.5 w-3.5 text-slate-300 opacity-0 group-hover:opacity-100 transition" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                            </p>
                             {% if projet.description %}
                             <p class="text-xs text-slate-400 mt-0.5 truncate max-w-xs">{{ projet.description }}</p>
                             {% endif %}
@@ -274,6 +277,98 @@ Tableau de Bord
         </form>
     </div>
 </div>
+
+<!-- ============ MODAL : RÉSUMÉ AFFAIRE (consultation) ============ -->
+<div id="modal-resume-projet" class="fixed inset-0 glass-bg hidden z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto animate-fadeIn">
+        <!-- En-tête -->
+        <div class="flex items-start justify-between p-6 border-b border-slate-100">
+            <div>
+                <p id="res-ref" class="text-xs font-mono text-slate-400"></p>
+                <h3 id="res-nom" class="text-lg font-bold text-slate-800 mt-0.5"></h3>
+                <div class="flex items-center gap-2 mt-1.5 text-xs text-slate-500">
+                    <span id="res-client"></span>
+                    <span id="res-statut" class="inline-flex items-center px-2 py-0.5 rounded-full font-semibold"></span>
+                </div>
+            </div>
+            <button onclick="document.getElementById('modal-resume-projet').classList.add('hidden')"
+                    class="text-slate-400 hover:text-slate-600 transition p-1">
+                <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+        </div>
+
+        <!-- Chargement -->
+        <div id="res-loading" class="p-10 flex flex-col items-center justify-center gap-3 text-center">
+            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600"></div>
+            <p class="text-xs text-slate-400">Lecture des livrables SHP…</p>
+        </div>
+
+        <!-- Aucun livrable -->
+        <div id="res-vide" class="hidden p-10 text-center">
+            <div class="w-14 h-14 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                <svg class="h-7 w-7 text-slate-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" /></svg>
+            </div>
+            <p class="text-sm font-medium text-slate-600">Aucun livrable SHP généré</p>
+            <p class="text-xs text-slate-400 mt-1">Générez d'abord les SHP livrables depuis la carte.</p>
+        </div>
+
+        <!-- Contenu -->
+        <div id="res-contenu" class="hidden p-6 space-y-5">
+            <!-- Site + localisation -->
+            <div class="grid sm:grid-cols-2 gap-3">
+                <div id="res-site-box" class="rounded-xl border border-slate-200 p-4">
+                    <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Site</p>
+                    <p id="res-site-type" class="text-lg font-bold text-brand-700 mt-0.5">—</p>
+                    <p id="res-site-code" class="text-xs font-mono text-slate-500"></p>
+                </div>
+                <div class="rounded-xl border border-slate-200 p-4">
+                    <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Localisation</p>
+                    <p id="res-adresse" class="text-sm font-medium text-slate-700 mt-0.5">—</p>
+                    <p id="res-commune" class="text-xs text-slate-500"></p>
+                </div>
+            </div>
+
+            <!-- Compteurs -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div class="rounded-xl bg-slate-50 border border-slate-100 p-4 text-center">
+                    <p id="res-bpe" class="text-2xl font-bold text-slate-800">0</p>
+                    <p class="text-[11px] font-medium text-slate-500 mt-0.5">Boîtes BPE</p>
+                </div>
+                <div class="rounded-xl bg-slate-50 border border-slate-100 p-4 text-center">
+                    <p id="res-cables" class="text-2xl font-bold text-slate-800">0</p>
+                    <p class="text-[11px] font-medium text-slate-500 mt-0.5">Câbles</p>
+                </div>
+                <div class="rounded-xl bg-slate-50 border border-slate-100 p-4 text-center">
+                    <p id="res-appuis" class="text-2xl font-bold text-slate-800">0</p>
+                    <p class="text-[11px] font-medium text-slate-500 mt-0.5">Appuis</p>
+                </div>
+                <div class="rounded-xl bg-slate-50 border border-slate-100 p-4 text-center">
+                    <p id="res-chambres" class="text-2xl font-bold text-slate-800">0</p>
+                    <p class="text-[11px] font-medium text-slate-500 mt-0.5">Chambres</p>
+                </div>
+            </div>
+
+            <!-- Capacités -->
+            <div id="res-capa-wrap" class="hidden">
+                <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1.5">Capacités des câbles</p>
+                <div id="res-capacites" class="flex flex-wrap gap-1.5"></div>
+            </div>
+        </div>
+
+        <!-- Pied -->
+        <div class="flex items-center justify-between gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50/60">
+            <div class="text-xs text-slate-400">
+                <span class="font-medium text-slate-500">Créée le</span> <span id="res-date">—</span>
+                <span class="mx-1.5">·</span>Consultation seule
+            </div>
+            <div class="flex gap-2">
+                <button onclick="document.getElementById('modal-resume-projet').classList.add('hidden')"
+                        class="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 border border-slate-200 rounded-lg transition">Fermer</button>
+                <a id="res-lien-carte" href="#" class="px-4 py-2 text-xs font-semibold bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition shadow-sm">Ouvrir la carte</a>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts_extra %}
@@ -301,5 +396,86 @@ Tableau de Bord
                 .catch(err => alert('Erreur : ' + err));
         }
     }
+
+    // Résumé (consultation) d'une affaire depuis les SHP livrables
+    const _statutCouleurs = {
+        'Nouveau': 'bg-violet-100 text-violet-700',
+        'En cours': 'bg-blue-100 text-blue-700',
+        'Terminé': 'bg-emerald-100 text-emerald-700',
+        'Archivé': 'bg-slate-100 text-slate-600',
+    };
+
+    function ouvrirResumeProjet(projetId) {
+        const modal = document.getElementById('modal-resume-projet');
+        modal.classList.remove('hidden');
+        document.getElementById('res-loading').classList.remove('hidden');
+        document.getElementById('res-contenu').classList.add('hidden');
+        document.getElementById('res-vide').classList.add('hidden');
+        document.getElementById('res-lien-carte').href = '/map/' + projetId;
+
+        fetch('/api/projets/' + projetId + '/resume')
+            .then(r => r.json())
+            .then(d => {
+                // En-tête
+                document.getElementById('res-ref').textContent = d.reference || '';
+                document.getElementById('res-nom').textContent = d.nom || '';
+                document.getElementById('res-client').textContent = d.client ? ('Client : ' + d.client) : 'Sans client';
+                const st = document.getElementById('res-statut');
+                st.textContent = d.statut || '';
+                st.className = 'inline-flex items-center px-2 py-0.5 rounded-full font-semibold ' + (_statutCouleurs[d.statut] || 'bg-slate-100 text-slate-600');
+                document.getElementById('res-date').textContent = d.date_creation || '—';
+
+                document.getElementById('res-loading').classList.add('hidden');
+                if (!d.a_livrable) {
+                    document.getElementById('res-vide').classList.remove('hidden');
+                    return;
+                }
+                // Site
+                const siteBox = document.getElementById('res-site-box');
+                if (d.site && d.site.type) {
+                    document.getElementById('res-site-type').textContent = d.site.type;
+                    document.getElementById('res-site-code').textContent = d.site.code || '';
+                    siteBox.classList.add('bg-brand-50/40', 'border-brand-200');
+                } else {
+                    document.getElementById('res-site-type').textContent = '—';
+                    document.getElementById('res-site-code').textContent = '';
+                    siteBox.classList.remove('bg-brand-50/40', 'border-brand-200');
+                }
+                // Localisation
+                document.getElementById('res-adresse').textContent = d.adresse || '—';
+                document.getElementById('res-commune').textContent = [d.cp, d.commune].filter(Boolean).join(' ');
+                // Compteurs
+                document.getElementById('res-bpe').textContent = d.bpe || 0;
+                document.getElementById('res-cables').textContent = d.cables || 0;
+                document.getElementById('res-appuis').textContent = d.appuis || 0;
+                document.getElementById('res-chambres').textContent = d.chambres || 0;
+                // Capacités
+                const capaWrap = document.getElementById('res-capa-wrap');
+                const capa = document.getElementById('res-capacites');
+                capa.innerHTML = '';
+                if (d.capacites && d.capacites.length) {
+                    d.capacites.forEach(c => {
+                        const chip = document.createElement('span');
+                        chip.className = 'inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold bg-slate-100 text-slate-600';
+                        chip.textContent = c + ' FO';
+                        capa.appendChild(chip);
+                    });
+                    capaWrap.classList.remove('hidden');
+                } else {
+                    capaWrap.classList.add('hidden');
+                }
+                document.getElementById('res-contenu').classList.remove('hidden');
+            })
+            .catch(err => {
+                document.getElementById('res-loading').classList.add('hidden');
+                document.getElementById('res-vide').classList.remove('hidden');
+                console.error('Résumé projet:', err);
+            });
+    }
+
+    // Fermer le modal résumé au clic sur le fond
+    document.getElementById('modal-resume-projet').addEventListener('click', function (e) {
+        if (e.target === this) this.classList.add('hidden');
+    });
 </script>
 {% endblock %}

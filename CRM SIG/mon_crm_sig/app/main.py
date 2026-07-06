@@ -373,6 +373,78 @@ def api_mettre_a_jour_statut(
     return RedirectResponse(url="/", status_code=303)
 
 
+@app.get("/api/projets/{projet_id}/resume")
+def api_resume_projet(projet_id: int, db: Session = Depends(get_db)):
+    """Résumé (consultation seule) d'une affaire pour le tableau de bord : infos
+    déduites des SHP LIVRABLES (site NRA/BTS/NRO, adresse, commune, nb BPE,
+    câbles + capacités, appuis, chambres) + date de création."""
+    import glob as _glob
+    from app.reporting import apd_generator as ag
+    projet = crm_service.obtenir_projet(db, projet_id)
+    if not projet:
+        raise HTTPException(status_code=404, detail="Projet non trouvé")
+
+    resume = {
+        "reference": projet.reference or f"#{projet.id:04d}",
+        "nom": projet.nom,
+        "description": projet.description or "",
+        "client": projet.client.nom if projet.client else None,
+        "statut": projet.statut,
+        "date_creation": (projet.date_creation.strftime("%d/%m/%Y")
+                          if projet.date_creation else None),
+        "a_livrable": False,
+        "site": None, "adresse": "", "cp": "", "commune": "",
+        "bpe": 0, "cables": 0, "capacites": [], "appuis": 0, "chambres": 0,
+    }
+
+    dossier = _trouver_dossier_shape(projet)
+    if not (dossier and os.path.isdir(dossier)
+            and _glob.glob(os.path.join(dossier, "*.shp"))):
+        return JSONResponse(resume)  # pas encore de SHP livrable généré
+    resume["a_livrable"] = True
+
+    # Site / adresse / commune / câbles : via la synthèse (mêmes règles que l'APD).
+    try:
+        synth = ag.calculer_synthese(dossier, ref_projet=(projet.reference or f"AFF_{projet.id}"))
+        cart = synth.get("cartouche", {})
+        site = cart.get("site") or ""
+        resume["site"] = {"type": site, "code": cart.get("code_projet", "")} if site else None
+        resume["adresse"] = cart.get("adresse", "")
+        resume["cp"] = cart.get("cp", "")
+        resume["commune"] = cart.get("commune", "")
+        resume["cables"] = synth.get("cables", {}).get("nombre", 0)
+        resume["capacites"] = synth.get("cables", {}).get("capacites", [])
+    except Exception as e:
+        logger.warning(f"Résumé projet {projet_id} : synthèse partielle ({e})")
+
+    # Comptages directs depuis les SHP livrables.
+    import geopandas as gpd
+
+    def _lire(nom):
+        p = os.path.join(dossier, f"{nom}.shp")
+        if not os.path.exists(p):
+            return None
+        try:
+            g = gpd.read_file(p)
+            return g if len(g) else None
+        except Exception:
+            return None
+
+    bpe = _lire("BPE")
+    resume["bpe"] = 0 if bpe is None else len(bpe)
+    pt = _lire("PT")
+    if pt is not None:
+        ch = ap = 0
+        for _, r in pt.iterrows():
+            if ag._est_poteau(str(r.get("TYPE_STRUC") or "")):
+                ap += 1
+            else:
+                ch += 1
+        resume["chambres"] = ch
+        resume["appuis"] = ap
+    return JSONResponse(resume)
+
+
 @app.delete("/api/projets/{projet_id}")
 def api_supprimer_projet(projet_id: int, db: Session = Depends(get_db)):
     """Supprime un projet de la base de données."""
