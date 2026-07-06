@@ -33,13 +33,27 @@ def generer_reference(db: Session) -> str:
     """
     Génère une référence unique pour un projet au format AFF-AAAA-NNNN.
     Exemple : AFF-2026-0001, AFF-2026-0002, etc.
+
+    Basé sur le plus grand numéro déjà utilisé cette année + 1 (robuste aux
+    suppressions : un simple count réutiliserait un numéro déjà pris et
+    violerait la contrainte d'unicité), avec garde-fou d'unicité.
     """
     annee = datetime.utcnow().year
-    # Compter combien de projets existent déjà cette année
-    count = db.query(models.Projet).filter(
-        models.Projet.reference.like(f"AFF-{annee}-%")
-    ).count()
-    return f"AFF-{annee}-{count + 1:04d}"
+    prefixe = f"AFF-{annee}-"
+    refs = [r for (r,) in db.query(models.Projet.reference).filter(
+        models.Projet.reference.like(f"{prefixe}%")
+    ).all() if r]
+    max_n = 0
+    for r in refs:
+        try:
+            max_n = max(max_n, int(r.rsplit("-", 1)[-1]))
+        except (ValueError, IndexError):
+            pass
+    existantes = set(refs)
+    n = max_n + 1
+    while f"{prefixe}{n:04d}" in existantes:  # garde-fou anti-collision
+        n += 1
+    return f"{prefixe}{n:04d}"
 
 
 def creer_dossier_projet(projet_id: int, nom_projet: str) -> str:
