@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+
+{% block nav_dashboard_class %}text-brand-300 hover:bg-white/10{% endblock %}
+{% block header_title %}Folios — {{ projet.reference or projet.nom }}{% endblock %}
+
+{% block head_extra %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"/>
+<style>
+  #map-folios { height: 100%; width: 100%; border-radius: 0.75rem; }
+  .folio-num {
+    background: #1f4fd6; color: #fff; border: none; border-radius: 4px;
+    font-weight: 700; font-size: 12px; padding: 1px 6px; box-shadow: 0 1px 3px rgba(0,0,0,.3);
+  }
+  .folio-num::before { display: none; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="flex flex-col h-full gap-2">
+  <!-- Barre d'outils -->
+  <div class="flex flex-wrap items-center gap-2 bg-white rounded-xl border border-slate-200 shadow-sm px-4 py-2.5">
+    <div class="mr-auto">
+      <p class="text-sm font-bold text-slate-800">Éditeur de folios</p>
+      <p class="text-[11px] text-slate-400">Dessinez les cadres à la main (outil rectangle, à droite) ou générez-les automatiquement. <span id="folio-count" class="font-semibold text-brand-600"></span></p>
+    </div>
+    <button onclick="autoFolios()" id="btn-auto" class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg border border-brand-500 text-brand-700 hover:bg-brand-50 transition">
+      <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zM14 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" /></svg>
+      Auto‑générer
+    </button>
+    <button onclick="effacerFolios()" class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 text-slate-500 hover:text-red-600 hover:border-red-300 transition">
+      <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3" /></svg>
+      Tout effacer
+    </button>
+    <button onclick="enregistrerFolios()" id="btn-save" class="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg bg-brand-600 text-white hover:bg-brand-700 shadow-sm transition">
+      <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+      Enregistrer
+    </button>
+  </div>
+  <!-- Carte -->
+  <div class="flex-1 bg-white rounded-xl border border-slate-100 shadow-sm p-1.5 min-h-[300px]">
+    <div id="map-folios"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts_extra %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+<script>
+  const projetId = {{ projet.id }};
+  const coucheIds = [{% for c in couches_affichees %}{{ c.id }}{% if not loop.last %},{% endif %}{% endfor %}];
+
+  const map = L.map('map-folios').setView([46.6, 1.88], 6);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 20, attribution: '&copy; OpenStreetMap'
+  }).addTo(map);
+
+  // Groupe éditable des folios
+  const folios = new L.FeatureGroup().addTo(map);
+
+  // Contrôle de dessin : rectangle uniquement + édition/suppression
+  const drawControl = new L.Control.Draw({
+    position: 'topright',
+    draw: { polyline: false, polygon: false, circle: false, marker: false,
+            circlemarker: false, rectangle: { shapeOptions: { color: '#1f4fd6', weight: 2, fillOpacity: 0.05 } } },
+    edit: { featureGroup: folios, remove: true }
+  });
+  map.addControl(drawControl);
+
+  function renumeroter() {
+    let i = 0;
+    folios.eachLayer(l => {
+      i++;
+      l._folioNum = i;
+      const c = l.getBounds().getNorthEast();
+      l.unbindTooltip();
+      l.bindTooltip(String(i), { permanent: true, direction: 'left', className: 'folio-num', offset: [-2, 8] });
+      l.openTooltip(c);
+    });
+    document.getElementById('folio-count').textContent = i ? (i + ' folio' + (i > 1 ? 's' : '')) : 'Aucun folio';
+  }
+
+  map.on(L.Draw.Event.CREATED, e => { folios.addLayer(e.layer); renumeroter(); });
+  map.on(L.Draw.Event.DELETED, renumeroter);
+  map.on(L.Draw.Event.EDITED, renumeroter);
+
+  function _rectDepuis(f) {
+    return L.rectangle([[f.south, f.west], [f.north, f.east]],
+      { color: '#1f4fd6', weight: 2, fillOpacity: 0.05 });
+  }
+
+  // ----- Réseau (contexte) : géojson des couches livrables -----
+  function chargerReseau() {
+    coucheIds.forEach(id => {
+      fetch('/api/projets/' + projetId + '/couches/' + id + '/geojson')
+        .then(r => r.json())
+        .then(d => {
+          if (!d.geojson) return;
+          L.geoJSON(JSON.parse(d.geojson), {
+            style: f => {
+              const s = f.properties && f.properties._sty;
+              if (s && s.g === 'ln') return { color: s.coul || '#c0392b', weight: 2, opacity: 0.9 };
+              if (s && s.g === 'pg') return { color: '#555', weight: 1, fill: false, dashArray: '2,3' };
+              return { color: d.couleur || '#c0392b', weight: 1.5 };
+            },
+            pointToLayer: (f, ll) => {
+              const s = f.properties && f.properties._sty;
+              return L.circleMarker(ll, { radius: 4, color: '#fff', weight: 1,
+                fillColor: (s && s.coul) || d.couleur || '#e8721e', fillOpacity: 0.9 });
+            },
+            interactive: false
+          }).addTo(map);
+        }).catch(() => {});
+    });
+  }
+
+  // ----- Chargement initial : emprise + folios existants -----
+  function chargerFolios() {
+    fetch('/api/projets/' + projetId + '/folios')
+      .then(r => r.json())
+      .then(d => {
+        if (d.extent) {
+          map.fitBounds([[d.extent.south, d.extent.west], [d.extent.north, d.extent.east]], { padding: [40, 40] });
+        }
+        (d.folios || []).forEach(f => folios.addLayer(_rectDepuis(f)));
+        renumeroter();
+      });
+  }
+
+  function autoFolios() {
+    const btn = document.getElementById('btn-auto');
+    btn.disabled = true; btn.classList.add('opacity-50');
+    fetch('/api/projets/' + projetId + '/folios/auto', { method: 'POST' })
+      .then(r => r.json().then(d => ({ ok: r.ok, d })))
+      .then(({ ok, d }) => {
+        if (!ok) throw new Error(d.detail || 'Auto impossible');
+        folios.clearLayers();
+        (d.folios || []).forEach(f => folios.addLayer(_rectDepuis(f)));
+        renumeroter();
+      })
+      .catch(err => alert('Erreur : ' + err.message))
+      .finally(() => { btn.disabled = false; btn.classList.remove('opacity-50'); });
+  }
+
+  function effacerFolios() {
+    if (folios.getLayers().length && !confirm('Effacer tous les folios ?')) return;
+    folios.clearLayers(); renumeroter();
+  }
+
+  function enregistrerFolios() {
+    const liste = [];
+    folios.eachLayer(l => {
+      const b = l.getBounds();
+      liste.push({ id: l._folioNum, south: b.getSouth(), west: b.getWest(), north: b.getNorth(), east: b.getEast() });
+    });
+    const btn = document.getElementById('btn-save');
+    const txt = btn.innerHTML; btn.disabled = true; btn.textContent = 'Enregistrement…';
+    fetch('/api/projets/' + projetId + '/folios', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ folios: liste })
+    })
+      .then(r => r.json().then(d => ({ ok: r.ok, d })))
+      .then(({ ok, d }) => {
+        if (!ok) throw new Error(d.detail || 'Enregistrement impossible');
+        btn.innerHTML = txt; btn.disabled = false;
+        alert(d.message || 'Folios enregistrés.');
+      })
+      .catch(err => { btn.innerHTML = txt; btn.disabled = false; alert('Erreur : ' + err.message); });
+  }
+
+  chargerReseau();
+  chargerFolios();
+</script>
+{% endblock %}

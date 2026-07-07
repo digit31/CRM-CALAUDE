@@ -130,6 +130,28 @@ def page_carte(request: Request, projet_id: int, db: Session = Depends(get_db)):
     })
 
 
+@app.get("/projets/{projet_id}/folios", response_class=HTMLResponse)
+def page_folios(request: Request, projet_id: int, db: Session = Depends(get_db)):
+    """Éditeur de folios : dessiner à la main ou auto-générer la grille des plans."""
+    projet = crm_service.obtenir_projet(db, projet_id)
+    if not projet:
+        raise HTTPException(status_code=404, detail="Projet non trouvé")
+    bases_liv = _bases_livrables(projet)
+
+    def _affichee(c):
+        if (c.nom or "").strip().lower().startswith("[livrable]"):
+            return True
+        base = (c.nom or "").upper().replace("[LIVRABLE]", "").strip()
+        return base not in bases_liv
+
+    couches_affichees = [c for c in projet.couches if _affichee(c)]
+    return templates.TemplateResponse("folios.html", {
+        "request": request,
+        "projet": projet,
+        "couches_affichees": couches_affichees,
+    })
+
+
 @app.get("/projets/{projet_id}/etudes", response_class=HTMLResponse)
 def page_etudes(request: Request, projet_id: int, db: Session = Depends(get_db)):
     """Page listant les études et livrables générables pour ce projet."""
@@ -232,7 +254,9 @@ def api_console_donnees(projet_id: int, recalc: int = 0, db: Session = Depends(g
     date_str = datetime.utcnow().strftime("%d/%m/%Y")
     ref = projet.reference or f"AFF_{projet.id}"
     try:
-        defauts = apd_generator.calculer_synthese(dossier_shape, ref_projet=ref, date_str=date_str)
+        natures = _natures_appuis_projet(projet, dossier_shape)
+        defauts = apd_generator.calculer_synthese(dossier_shape, ref_projet=ref,
+                                                  date_str=date_str, natures_appuis=natures)
     except Exception as e:
         logger.warning(f"Console : calcul synthèse impossible ({e})")
         defauts = {"cartouche": {"code_projet": ref.replace("-", "_"), "date_real": date_str,
@@ -336,6 +360,270 @@ def api_apd_clear_plan_masse(projet_id: int, db: Session = Depends(get_db)):
         except Exception:
             pass
     return JSONResponse({"message": "Plan de masse retiré.", "supprimes": n})
+
+
+# ---------------------------------------------------------------------------
+# Annexes C6 / C7 (appuis Orange) : upload + jointure à la couche PT
+# ---------------------------------------------------------------------------
+
+def _dossier_annexes(projet):
+    d = os.path.join(projet.chemin_dossier, "02_Traitement", "annexes")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def _chemin_annexe(projet, typ):
+    """Chemin du fichier annexe c6/c7 s'il existe (xlsx), sinon None."""
+    d = _dossier_annexes(projet)
+    for ext in (".xlsx", ".xlsm", ".xls"):
+        p = os.path.join(d, f"{typ}{ext}")
+        if os.path.exists(p):
+            return p
+    return None
+
+
+def _natures_appuis_projet(projet, dossier_shape):
+    """{NOM_poteau: nature} depuis les annexes C6/C7 du projet (ou {} si absentes)."""
+    c6, c7 = _chemin_annexe(projet, "c6"), _chemin_annexe(projet, "c7")
+    if not c6 and not c7:
+        return {}
+    try:
+        from app.reporting import annexe_appuis as _aa
+        annexes = _aa.charger_annexes(c6, c7)
+        pt = gis_handler.lire_shapefile(os.path.join(dossier_shape, "PT.shp")) \
+            if os.path.exists(os.path.join(dossier_shape, "PT.shp")) else None
+        if pt is None or not annexes:
+            return {}
+        return _aa.natures_par_nom(pt, annexes)
+    except Exception as e:
+        logger.warning(f"Natures appuis (annexes) projet {projet.id} : {e}")
+        return {}
+
+
+def _dossier_folios(projet):
+    d = os.path.join(projet.chemin_dossier, "02_Traitement", "folios")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def _folios_shp_projet(projet, dossier_shape):
+    """Chemin du FOLIO_LIVRABLES.shp du projet (dessiné/importé), sinon celui du
+    dossier SHAPE, sinon None (déclenche l'auto-génération)."""
+    for p in (os.path.join(_dossier_folios(projet), "FOLIO_LIVRABLES.shp"),
+              os.path.join(dossier_shape, "FOLIO_LIVRABLES.shp")):
+        if os.path.exists(p):
+            return p
+    return None
+
+
+def _bbox_3857_vers_wgs(b):
+    """(x0,y0,x1,y1) en 3857 -> {west,south,east,north} en WGS84."""
+    import geopandas as gpd
+    from shapely.geometry import box
+    g = gpd.GeoSeries([box(*b)], crs=3857).to_crs(4326).iloc[0].bounds
+    return {"west": g[0], "south": g[1], "east": g[2], "north": g[3]}
+
+
+@app.get("/api/projets/{projet_id}/folios")
+def api_folios_get(projet_id: int, db: Session = Depends(get_db)):
+    """Emprise réseau + folios existants (WGS84) pour l'éditeur."""
+    projet = crm_service.obtenir_projet(db, projet_id)
+    if not projet:
+        raise HTTPException(status_code=404, detail="Projet non trouvé")
+    from app.reporting import plan_generator as pg
+    dossier_shape = _trouver_dossier_shape(projet)
+    couches = pg._charger_couches_folio(dossier_shape)
+    extent = None
+    try:
+        extent = _bbox_3857_vers_wgs(pg._emprise(couches))
+    except Exception:
+        pass
+    folios = []
+    shp = _folios_shp_projet(projet, dossier_shape)
+    if shp:
+        try:
+            for fid, b in pg._charger_folios(shp, couches):
+                folios.append({"id": fid, **_bbox_3857_vers_wgs(b)})
+        except Exception as e:
+            logger.warning(f"Lecture folios projet {projet_id} : {e}")
+    return JSONResponse({"extent": extent, "folios": folios})
+
+
+@app.post("/api/projets/{projet_id}/folios/auto")
+def api_folios_auto(projet_id: int, db: Session = Depends(get_db)):
+    """Propose une grille de folios auto (WGS84), à retoucher dans l'éditeur."""
+    projet = crm_service.obtenir_projet(db, projet_id)
+    if not projet:
+        raise HTTPException(status_code=404, detail="Projet non trouvé")
+    from app.reporting import plan_generator as pg
+    couches = pg._charger_couches_folio(_trouver_dossier_shape(projet))
+    try:
+        recs = pg._folios_auto(couches)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Auto-génération impossible : {e}")
+    return JSONResponse({"folios": [{"id": fid, **_bbox_3857_vers_wgs(b)} for fid, b in recs]})
+
+
+@app.post("/api/projets/{projet_id}/folios")
+async def api_folios_save(projet_id: int, request: Request, db: Session = Depends(get_db)):
+    """Enregistre les folios (liste de bbox WGS84) -> FOLIO_LIVRABLES.shp (Lambert-93)."""
+    projet = crm_service.obtenir_projet(db, projet_id)
+    if not projet:
+        raise HTTPException(status_code=404, detail="Projet non trouvé")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Corps JSON invalide.")
+    folios = body.get("folios", []) or []
+    import glob as _glob
+    dossier = _dossier_folios(projet)
+    for f in _glob.glob(os.path.join(dossier, "FOLIO_LIVRABLES.*")):
+        try:
+            os.remove(f)
+        except Exception:
+            pass
+    if not folios:
+        return JSONResponse({"message": "Folios effacés.", "nb": 0})
+    try:
+        import geopandas as gpd
+        from shapely.geometry import box
+        geoms, ids = [], []
+        for i, f in enumerate(folios, 1):
+            geoms.append(box(float(f["west"]), float(f["south"]),
+                             float(f["east"]), float(f["north"])))
+            ids.append(int(f.get("id", i)))
+        gdf = gpd.GeoDataFrame({"id": ids}, geometry=geoms, crs="EPSG:4326").to_crs(2154)
+        gdf.to_file(os.path.join(dossier, "FOLIO_LIVRABLES.shp"), encoding="utf-8")
+    except Exception as e:
+        logger.error(f"Enregistrement folios projet {projet_id} : {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    return JSONResponse({"message": f"{len(geoms)} folio(s) enregistré(s).", "nb": len(geoms)})
+
+
+def _enrichir_pt_depuis_annexes(projet, dossier_shape):
+    """Met à jour NOM + CODE du PT livrable depuis les annexes C6/C7 (appuis
+    détectés par numéro ou géolocalisation). Le schéma du SHP est préservé.
+    Renvoie le nombre de poteaux mis à jour."""
+    c6, c7 = _chemin_annexe(projet, "c6"), _chemin_annexe(projet, "c7")
+    if not c6 and not c7:
+        return 0
+    p_pt = os.path.join(dossier_shape, "PT.shp")
+    if not os.path.exists(p_pt):
+        return 0
+    try:
+        from app.reporting import annexe_appuis as _aa
+        annexes = _aa.charger_annexes(c6, c7)
+        if not annexes:
+            return 0
+        pt = gis_handler.lire_shapefile(p_pt)
+        assoc = _aa.associer_pt(pt, annexes)
+        n = _aa.enrichir_pt_nom_code(pt, assoc)
+        if n:
+            pt.to_file(p_pt, encoding="utf-8")
+            logger.info(f"PT enrichi depuis annexes (projet {projet.id}) : "
+                        f"{n} appui(s) NOM/CODE mis à jour")
+        return n
+    except Exception as e:
+        logger.warning(f"Enrichissement PT depuis annexes projet {projet.id} : {e}")
+        return 0
+
+
+def _detecter_annexe(data):
+    """Devine c6/c7 depuis les feuilles du classeur Excel."""
+    try:
+        import io, openpyxl
+        wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True)
+        sheets = [s.lower() for s in wb.sheetnames]
+        wb.close()
+        if any("export" in s or "saisie" in s for s in sheets):
+            return "c6"
+        if any("commande" in s or "restitution" in s for s in sheets):
+            return "c7"
+    except Exception:
+        pass
+    return None
+
+
+def _apercu_annexes(projet, dossier_shape):
+    """Aperçu de la correspondance C6/C7 ↔ PT du projet (appuis concordants +
+    natures) pour le récapitulatif affiché à l'utilisateur."""
+    c6, c7 = _chemin_annexe(projet, "c6"), _chemin_annexe(projet, "c7")
+    from app.reporting import annexe_appuis as _aa
+    annexes = _aa.charger_annexes(c6, c7)
+    ap = {"a_c6": bool(c6), "a_c7": bool(c7), "total": len(annexes),
+          "matched": [], "non_matched": list(annexes.keys()),
+          "counts": {"remplacer": 0, "recaler": 0, "renforcer": 0}}
+    p_pt = os.path.join(dossier_shape, "PT.shp")
+    if not annexes or not os.path.exists(p_pt):
+        return ap
+    try:
+        pt = gis_handler.lire_shapefile(p_pt)
+        assoc = _aa.associer_pt(pt, annexes)
+        for idx, num in assoc.items():
+            d = annexes.get(num) or {}
+            ap["matched"].append({"num": num, "nature": d.get("nature", ""),
+                                  "nom_pt": str(pt.at[idx, "NOM"]) if "NOM" in pt.columns else num})
+        ap["counts"] = _aa.compter_natures(annexes, assoc)
+        pris = set(assoc.values())
+        ap["non_matched"] = [n for n in annexes if n not in pris]
+    except Exception as e:
+        logger.warning(f"Aperçu annexes projet {projet.id} : {e}")
+    return ap
+
+
+@app.post("/api/projets/{projet_id}/annexes/{typ}")
+async def api_annexe_upload(projet_id: int, typ: str, fichier: UploadFile = File(...),
+                            db: Session = Depends(get_db)):
+    """Upload d'une annexe appuis C6/C7 (Excel). `typ` = c6, c7 ou auto (détection).
+    Requiert que les couches livrables existent déjà. Pose le verrou « MAJ Shapes »
+    et renvoie l'aperçu des appuis concordants avec le PT du projet."""
+    typ = (typ or "").lower()
+    projet = crm_service.obtenir_projet(db, projet_id)
+    if not projet:
+        raise HTTPException(status_code=404, detail="Projet non trouvé")
+    # Gating : les SHP livrables doivent déjà exister.
+    if not any((c.nom or "").startswith("[Livrable]") for c in projet.couches):
+        raise HTTPException(
+            status_code=400,
+            detail="Générez d'abord les SHP livrables : les couches livrables "
+                   "doivent être présentes avant d'ajouter les annexes C6/C7.")
+    ext = os.path.splitext(fichier.filename or "")[1].lower()
+    if ext not in (".xlsx", ".xlsm", ".xls"):
+        raise HTTPException(status_code=400, detail="Format non supporté (Excel .xlsx).")
+    data = await fichier.read()
+    if typ not in ("c6", "c7"):
+        typ = _detecter_annexe(data) or ("c7" if "c7" in (fichier.filename or "").lower() else "c6")
+    import glob as _glob
+    dossier = _dossier_annexes(projet)
+    for f in _glob.glob(os.path.join(dossier, f"{typ}.*")):
+        try:
+            os.remove(f)
+        except Exception:
+            pass
+    with open(os.path.join(dossier, f"{typ}{ext}"), "wb") as f:
+        f.write(data)
+    _marquer_shapes_a_maj(projet)  # annexes ajoutées -> régénération SHP requise
+    apercu = _apercu_annexes(projet, _trouver_dossier_shape(projet))
+    return JSONResponse({"message": f"Annexe {typ.upper()} enregistrée.",
+                         "type": typ, "apercu": apercu})
+
+
+@app.delete("/api/projets/{projet_id}/annexes/{typ}")
+def api_annexe_clear(projet_id: int, typ: str, db: Session = Depends(get_db)):
+    """Retire une annexe C6 / C7."""
+    typ = (typ or "").lower()
+    projet = crm_service.obtenir_projet(db, projet_id)
+    if not projet:
+        raise HTTPException(status_code=404, detail="Projet non trouvé")
+    import glob as _glob
+    n = 0
+    for f in _glob.glob(os.path.join(_dossier_annexes(projet), f"{typ}.*")):
+        try:
+            os.remove(f)
+            n += 1
+        except Exception:
+            pass
+    return JSONResponse({"message": f"Annexe {typ.upper()} retirée.", "supprimes": n})
 
 
 @app.get("/clients", response_class=HTMLResponse)
@@ -691,15 +979,36 @@ def _chemins_livrables_apd(projet) -> str:
     return os.path.join(dossier_carto, "SHAPE")
 
 
+def _shape_dir_valide(dossier) -> bool:
+    """True si le dossier SHAPE contient au moins un .shp RÉEL (non vide).
+
+    Un livrable mock (``doe_global``) crée des .shp de 0 octet : un en-tête ESRI
+    valide fait au moins 100 octets. On écarte ainsi les dossiers vides qui
+    « masqueraient » un vrai dossier livrable plus ancien."""
+    import glob
+    for shp in glob.glob(os.path.join(dossier, "*.shp")):
+        try:
+            if os.path.getsize(shp) > 100:
+                return True
+        except OSError:
+            continue
+    return False
+
+
 def _trouver_dossier_shape(projet) -> str:
-    """Dossier SHAPE des livrables : renvoie le dossier EXISTANT le plus récent
-    (source de vérité pour PDS/KMZ), sinon le chemin par défaut (date du jour)."""
+    """Dossier SHAPE des livrables : renvoie le dossier VALIDE le plus récent
+    (source de vérité pour PDS/KMZ), en IGNORANT les dossiers vides/mock ;
+    sinon le chemin par défaut (date du jour)."""
     import glob
     base_doe = os.path.join(projet.chemin_dossier, "04_Livrables_DOE")
     cands = [c for c in glob.glob(os.path.join(base_doe, "APD_FO_*", "APD_HTL_*", "SHAPE"))
              if os.path.isdir(c)]
     if cands:
-        return max(cands, key=os.path.getmtime)
+        cands.sort(key=os.path.getmtime, reverse=True)
+        for c in cands:
+            if _shape_dir_valide(c):
+                return c
+        return cands[0]   # aucun valide : le plus récent (comportement historique)
     return _chemins_livrables_apd(projet)
 
 
@@ -1089,10 +1398,15 @@ def api_obtenir_geojson(projet_id: int, couche_id: int, db: Session = Depends(ge
             import json as _json
             gj = _json.loads(geojson_str)
             feats = gj.get("features", [])
+            # Natures des travaux (annexes C6/C7) pour colorer les poteaux FT.
+            natures = (_natures_appuis_projet(projet, _trouver_dossier_shape(projet))
+                       if (projet and base == "PT") else {})
             for i, (_, row) in enumerate(gdf.iterrows()):
                 if i < len(feats):
                     try:
-                        sty = symb.style_web(base, row)
+                        nat = (natures.get(str(row.get("NOM") or "").strip())
+                               if natures else None)
+                        sty = symb.style_web(base, row, nat)
                         if sty and not porte_etiq:
                             sty.pop("lbl", None)
                             sty.pop("lc", None)
@@ -1242,9 +1556,10 @@ def api_generer_etude(projet_id: int, type_etude: str, mode: str = "overwrite", 
             from app.reporting import apd_generator, apd_pptx, plan_generator
             import json as _json, glob as _glob
             dossier_shape = _trouver_dossier_shape(projet)
+            natures = _natures_appuis_projet(projet, dossier_shape)
             defauts = apd_generator.calculer_synthese(
                 dossier_shape, ref_projet=(projet.reference or f"AFF_{projet.id}"),
-                date_str=datetime.utcnow().strftime("%d/%m/%Y"))
+                date_str=datetime.utcnow().strftime("%d/%m/%Y"), natures_appuis=natures)
             p_json = _chemin_console_json(projet)
             sauvegarde = {}
             if os.path.exists(p_json):
@@ -1272,7 +1587,7 @@ def api_generer_etude(projet_id: int, type_etude: str, mode: str = "overwrite", 
                 # symbologie NETGEO exacte), sans aucune dépendance QGIS.
                 plan_general = os.path.join(dossier_global, f"plan_general_{ref_propre}.png")
                 try:
-                    plan_generator.generer_plan_apd(dossier_shape, plan_general)
+                    plan_generator.generer_plan_apd(dossier_shape, plan_general, natures=natures)
                 except Exception as e:
                     logger.warning(f"Plan général APD non généré ({e})")
                     plan_general = None
@@ -1283,6 +1598,26 @@ def api_generer_etude(projet_id: int, type_etude: str, mode: str = "overwrite", 
             chemin_pdf = os.path.join(dossier_global, f"APD_HTL_{ref_propre}_02_{date_str}.pdf")
             apd_pptx.generer_apd_plan(APD_PPTX_TEMPLATE, donnees, dossier_shape, chemin_pdf,
                                       plan_general=plan_general, plan_masse=plan_masse)
+
+            # 2ᵉ série de plans : folios A3 (vue d'ensemble + un folio par page),
+            # fusionnés après les pages A4 -> un seul PDF APD.
+            try:
+                folios_shp = _folios_shp_projet(projet, dossier_shape)
+                chemin_folios = os.path.join(dossier_global, f"folios_{ref_propre}.pdf")
+                plan_generator.generer_folios_apd(dossier_shape, chemin_folios,
+                                                  folios_shp=folios_shp, natures=natures)
+                if os.path.exists(chemin_folios):
+                    import fitz as _fitz
+                    doc = _fitz.open(chemin_pdf)
+                    fol = _fitz.open(chemin_folios)
+                    doc.insert_pdf(fol)
+                    tmp = chemin_pdf + ".tmp"
+                    doc.save(tmp)
+                    doc.close(); fol.close()
+                    os.replace(tmp, chemin_pdf)
+            except Exception as e:
+                logger.warning(f"Folios APD non fusionnés (projet {projet.id}) : {e}")
+
             message = "Plan APD (PPTX → PDF) généré."
             
         elif type_etude == "pds":
@@ -1349,6 +1684,8 @@ def api_generer_etude(projet_id: int, type_etude: str, mode: str = "overwrite", 
                     )
                     db.add(nouvelle_couche)
             db.commit()
+            # Annexes C6/C7 : met à jour NOM+CODE du PT livrable (structure préservée)
+            _enrichir_pt_depuis_annexes(projet, dossier_sortie)
             _effacer_shapes_a_maj(projet)  # Shapes à jour -> déverrouille les livrables
 
             message = f"Cartographie SHAPE générée ({len(fichiers)} fichiers)."

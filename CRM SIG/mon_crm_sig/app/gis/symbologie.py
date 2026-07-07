@@ -45,6 +45,10 @@ PT_CHAMBRE_TIERS = (163, 72, 182)
 PT_POTEAU_FREE_CREER = (255, 5, 1)
 PT_POTEAU_FREE_EXIST = (0, 0, 255)
 PT_POTEAU_FT = (255, 94, 1)
+# Poteau FT par nature des travaux (annexes C6/C7)
+PT_POTEAU_FT_REMPL = (255, 140, 0)
+PT_POTEAU_FT_RENF = (196, 82, 6)
+PT_POTEAU_FT_IRR = (139, 20, 12)
 
 # Sites
 BTS_COUL = (120, 214, 25)
@@ -118,7 +122,19 @@ def _num(row, champ):
 # Catégorisation (reproduit les CASE QGIS)
 # ---------------------------------------------------------------------------
 
-def categorie_pt(row):
+def _cat_poteau_nature(nature):
+    """Catégorie de poteau FT selon la nature des travaux (annexes C6/C7)."""
+    n = (nature or "").upper()
+    if "REMPLAC" in n:
+        return "POTEAU FT REMPLACEMENT"
+    if "RECAL" in n or "RENFORC" in n:
+        return "POTEAU FT RENFORCEMENT/RECALAGE"
+    if "IRREMPLAC" in n:
+        return "POTEAU FT IRREMPLACABLE"
+    return None
+
+
+def categorie_pt(row, nature=None):
     struc = _up(row, "TYPE_STRUC")
     prop = _up(row, "PROPRIETAI")
     etat = _up(row, "ETAT")
@@ -129,7 +145,7 @@ def categorie_pt(row):
     if poteau:
         if free:
             return "POTEAU FREE A CRÉER" if etude else "POTEAU FREE EXISTANT"
-        return "POTEAU FT"
+        return _cat_poteau_nature(nature) or "POTEAU FT"
     if free:
         return "CHAMBRE FREE A CRÉER" if etude else "CHAMBRE FREE EXISTANTE"
     if ftorange:
@@ -146,13 +162,17 @@ _PT_STYLE = {
     "POTEAU FREE A CRÉER": ("arrow", PT_POTEAU_FREE_CREER, 4.3),
     "POTEAU FREE EXISTANT": ("arrow", PT_POTEAU_FREE_EXIST, 4.3),
     "POTEAU FT": ("arrow", PT_POTEAU_FT, 4.3),
+    "POTEAU FT REMPLACEMENT": ("arrow", PT_POTEAU_FT_REMPL, 4.3),
+    "POTEAU FT RENFORCEMENT/RECALAGE": ("arrow", PT_POTEAU_FT_RENF, 4.3),
+    "POTEAU FT IRREMPLACABLE": ("arrow", PT_POTEAU_FT_IRR, 4.3),
 }
 
 # Ordres canoniques pour la légende (dynamique).
 _ORDRE_CABLE = ["CAD", "CTR", "CDI", "CDD", "BAG", "FON", "CAB", "CBM", "CIM"]
 _ORDRE_PT = ["CHAMBRE FREE A CRÉER", "CHAMBRE FREE EXISTANTE", "CHAMBRE ORANGE",
              "CHAMBRE PRIVE/OP TIERS", "POTEAU FREE A CRÉER", "POTEAU FREE EXISTANT",
-             "POTEAU FT"]
+             "POTEAU FT", "POTEAU FT REMPLACEMENT", "POTEAU FT RENFORCEMENT/RECALAGE",
+             "POTEAU FT IRREMPLACABLE"]
 _ORDRE_SUPPORT = ["BLO ORANGE", "BLO ORANGE UNITAIRE", "AERIEN FT", "GC FREE EXISTANT",
                   "GC FREE A CREER", "AERIEN FREE", "GC PRIVE/OP TIERS", "ENEDIS AERIEN"]
 _LIB_SUPPORT = {"GC FREE A CREER": "GC FREE A CRÉER"}  # libellé affiché
@@ -226,8 +246,8 @@ def style_bpe(row):
             "label": _v(row, "NOM"), "label_couleur": LBL_ROUGE}
 
 
-def style_pt(row):
-    cat = categorie_pt(row)
+def style_pt(row, nature=None):
+    cat = categorie_pt(row, nature)
     forme, coul, taille = _PT_STYLE[cat]
     contour = coul if "CHAMBRE" in cat else CONTOUR_SOMBRE
     return {"geom": "point", "forme": forme, "couleur": coul, "contour": contour,
@@ -302,11 +322,18 @@ STYLE_COUCHE = {
 ORDRE_DESSIN = ["COMMUNE", "SUPPORT", "CABLES", "PT", "BPE", "NRA", "NRO_RIP", "BTS", "BLOCAGE"]
 
 
-def style_de(nom_couche, row):
-    """Style d'une entité pour une couche (nom sans préfixe [Livrable])."""
+def style_de(nom_couche, row, nature=None):
+    """Style d'une entité pour une couche (nom sans préfixe [Livrable]).
+
+    ``nature`` : nature des travaux du poteau (annexes C6/C7), pour colorer les
+    poteaux FT à remplacer / recaler-renforcer / irremplaçables."""
     base = (nom_couche or "").upper().replace("[LIVRABLE]", "").strip()
     fn = STYLE_COUCHE.get(base)
-    return fn(row) if fn else None
+    if fn is None:
+        return None
+    if base == "PT":
+        return fn(row, nature)
+    return fn(row)
 
 
 def est_stylee(nom_couche):
@@ -314,13 +341,13 @@ def est_stylee(nom_couche):
     return base in STYLE_COUCHE
 
 
-def style_web(nom_couche, row):
+def style_web(nom_couche, row, nature=None):
     """Style compact (couleurs hex) pour Leaflet — injecté dans le GeoJSON.
 
     Transporte aussi l'étiquette (``lbl``) et sa couleur (``lc``) afin que la
     carte interactive affiche les mêmes libellés que les plans PDF.
     """
-    st = style_de(nom_couche, row)
+    st = style_de(nom_couche, row, nature)
     if not st:
         return None
     if st["geom"] == "point":
@@ -355,12 +382,14 @@ def _presents(gdf, fn):
     return vus
 
 
-def legende_dynamique(couches):
+def legende_dynamique(couches, natures=None):
     """Légende ne montrant QUE les catégories présentes dans les données importées.
 
     `couches` : dict {nom_couche: GeoDataFrame|None}. Structure identique au plan
     de référence : SITE / BPE / CABLES / PT / SUPPORT.
+    `natures` : {NOM_poteau: nature} (annexes C6/C7) pour les sous-catégories poteau.
     """
+    natures = natures or {}
     blocs = []
 
     def _non_vide(n):
@@ -398,10 +427,15 @@ def legende_dynamique(couches):
         if entrees:
             blocs.append(("CABLES", entrees))
 
-    # PT
+    # PT (poteaux FT sous-catégorisés par nature des travaux si annexes fournies)
     pt = _non_vide("PT")
     if pt is not None:
-        pres = _presents(pt, categorie_pt)
+        pres = []
+        for _, r in pt.iterrows():
+            nat = natures.get(str(r.get("NOM") or "").strip()) if natures else None
+            c = categorie_pt(r, nat)
+            if c and c not in pres:
+                pres.append(c)
         entrees = [(_PT_STYLE[c][0], _PT_STYLE[c][1], c) for c in _ORDRE_PT if c in pres]
         if entrees:
             blocs.append(("PT", entrees))

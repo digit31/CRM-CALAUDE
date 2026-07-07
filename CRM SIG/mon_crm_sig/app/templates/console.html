@@ -119,9 +119,27 @@
           <div class="col-span-4"><label class="lbl">+ love manchon (ml)</label><input type="number" class="inp font-bold" data-sec="aerien" data-key="total_love_ml"></div>
         </div>
         <div class="grid grid-cols-12 gap-3 items-end pt-2 border-t border-slate-100">
-          <div class="col-span-4"><label class="lbl">Appuis à remplacer</label><input type="number" class="inp" data-sec="appuis" data-key="remplacer"></div>
-          <div class="col-span-4"><label class="lbl">Appuis à recaler / renforcer</label><input type="number" class="inp" data-sec="appuis" data-key="recaler"></div>
+          <div class="col-span-4"><label class="lbl">Appuis à remplacer <span class="auto">C6/C7 ✓</span></label><input type="number" class="inp" data-sec="appuis" data-key="remplacer"></div>
+          <div class="col-span-4"><label class="lbl">Appuis à recaler / renforcer <span class="auto">C6/C7 ✓</span></label><input type="number" class="inp" data-sec="appuis" data-key="recaler"></div>
           <div class="col-span-4"><label class="lbl">Appuis à implanter <span class="auto">auto ✓</span></label><input type="number" class="inp" data-sec="appuis" data-key="implanter"></div>
+        </div>
+        <!-- Annexes appuis C6 / C7 -->
+        <div class="pt-3 border-t border-slate-100">
+          <label class="lbl">Annexes appuis Orange (C6 / C7) — source « nature des travaux »</label>
+          <div class="flex flex-wrap items-center gap-2 mt-1.5">
+            <label id="ann-c6" class="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 text-slate-600 hover:border-brand-400 transition">
+              <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.9A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M12 11v6m0 0l-2-2m2 2l2-2" /></svg>
+              <span id="ann-c6-lbl">Ajouter C6</span>
+              <input type="file" class="hidden" accept=".xlsx,.xlsm,.xls" onchange="uploadAnnexe('c6', this)">
+            </label>
+            <label id="ann-c7" class="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 text-slate-600 hover:border-brand-400 transition">
+              <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.9A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M12 11v6m0 0l-2-2m2 2l2-2" /></svg>
+              <span id="ann-c7-lbl">Ajouter C7</span>
+              <input type="file" class="hidden" accept=".xlsx,.xlsm,.xls" onchange="uploadAnnexe('c7', this)">
+            </label>
+            <span id="ann-msg" class="text-[11px] text-slate-400"></span>
+          </div>
+          <p class="text-[11px] text-slate-400 mt-1.5">Détecte les appuis (par numéro ou géolocalisation), met à jour <b>NOM/CODE</b> du PT livrable et renseigne les travaux. Après ajout, régénérez les SHP (« MAJ Shapes »).</p>
         </div>
       </div>
     </section>
@@ -172,6 +190,33 @@
     t.classList.remove('hidden');
     clearTimeout(window.__toastT);
     window.__toastT = setTimeout(() => t.classList.add('hidden'), 3500);
+  }
+
+  function uploadAnnexe(typ, input) {
+    const file = input.files[0];
+    if (!file) return;
+    const lbl = document.getElementById('ann-' + typ + '-lbl');
+    const msg = document.getElementById('ann-msg');
+    const nomOrig = lbl.textContent;
+    lbl.textContent = 'Envoi…';
+    const fd = new FormData();
+    fd.append('fichier', file);
+    fetch('/api/projets/' + projetId + '/annexes/' + typ, { method: 'POST', body: fd })
+      .then(r => r.json().then(d => ({ ok: r.ok, d })))
+      .then(({ ok, d }) => {
+        if (!ok) throw new Error(d.detail || 'Envoi impossible');
+        lbl.textContent = typ.toUpperCase() + ' ✓';
+        document.getElementById('ann-' + typ).classList.add('border-emerald-400', 'text-emerald-700');
+        msg.className = 'text-[11px] text-emerald-600';
+        msg.textContent = 'Annexe ' + typ.toUpperCase() + ' ajoutée — régénérez les SHP (MAJ Shapes).';
+        toast('Annexe ' + typ.toUpperCase() + ' enregistrée.', 'ok');
+      })
+      .catch(err => {
+        lbl.textContent = nomOrig;
+        msg.className = 'text-[11px] text-red-500';
+        msg.textContent = 'Erreur : ' + err.message;
+      });
+    input.value = '';
   }
 
   function remplir(donnees) {

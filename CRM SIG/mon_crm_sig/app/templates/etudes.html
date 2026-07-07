@@ -160,7 +160,7 @@
                     <p class="text-sm text-slate-500 mt-1">Générez l'ensemble des livrables requis pour le dossier APD Fibre Optique.</p>
                 </div>
                 
-                <button onclick="genererEtude('doe_global')" id="btn-doe_global" class="bg-brand-600 hover:bg-brand-700 text-white font-medium text-sm py-2.5 px-6 rounded-lg shadow-md hover:shadow-lg transition-all flex items-center gap-2 transform active:scale-95">
+                <button onclick="ouvrirModalDossier()" id="btn-doe_global" class="bg-brand-600 hover:bg-brand-700 text-white font-medium text-sm py-2.5 px-6 rounded-lg shadow-md hover:shadow-lg transition-all flex items-center gap-2 transform active:scale-95">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                     </svg>
@@ -656,17 +656,15 @@
             </div>
         </div>
 
-        <!-- Étape : chargement -->
-        <div id="apd-etape-loading" class="hidden p-8 flex flex-col items-center justify-center gap-4 text-center bg-white">
-            <div class="w-14 h-14 rounded-full bg-brand-50 flex items-center justify-center">
-                <svg class="animate-spin h-7 w-7 text-brand-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+        <!-- Étape : chargement (plan PDF seul — avec ou sans plan de masse) -->
+        <div id="apd-etape-loading" class="hidden p-8 flex flex-col items-center justify-center gap-4 bg-white">
+            <svg class="animate-spin h-10 w-10 text-brand-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+            <div class="text-center">
+                <h3 class="text-base font-bold text-slate-800">Génération du plan APD<span class="apd-dots"></span></h3>
+                <p class="text-xs text-slate-400 mt-1">Template rempli + plan (fond Plan IGN) + folios. Comptez ~1 à 2 minutes.</p>
             </div>
-            <div>
-                <p class="text-sm font-semibold text-slate-700">Génération du Plan APD…</p>
-                <p class="text-xs text-slate-400 mt-1">Plan (fond Plan IGN) généré depuis les SHP, remplissage du template, export PDF — ~15 à 30 s</p>
-            </div>
-            <div class="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                <div class="pds-progress-bar h-full bg-brand-600 rounded-full"></div>
+            <div class="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                <div class="pds-progress-bar h-full bg-brand-500 rounded-full"></div>
             </div>
         </div>
 
@@ -701,6 +699,64 @@
         </div>
     </div>
 </div>
+
+<!-- MODAL : Génération du Dossier Complet (tous les livrables, en séquence) -->
+<div id="modal-dossier" class="fixed inset-0 glass-bg hidden z-50 flex items-center justify-center animate-fadeIn p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[92vh]">
+        <div class="p-6 border-b border-slate-100 flex items-center gap-3 bg-brand-50/50">
+            <div class="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center flex-shrink-0 text-brand-600">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+            </div>
+            <div class="flex-1 min-w-0">
+                <h3 class="text-base font-bold text-slate-800">Génération du Dossier Complet</h3>
+                <p class="text-xs text-slate-500">Tous les livrables générés ensemble, dans l'ordre.</p>
+            </div>
+            <span class="inline-flex items-center gap-1.5 text-xs font-mono font-semibold text-brand-600 bg-white border border-brand-100 px-2 py-1 rounded-lg flex-shrink-0">
+                <svg class="h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                <span id="dos-chrono">00:00</span>
+            </span>
+        </div>
+
+        <!-- Étape : chargement — stepper séquentiel -->
+        <div id="dos-etape-loading" class="p-6 bg-white overflow-y-auto">
+            <p class="text-xs text-slate-400 mb-4">Chaque document est généré à la suite depuis les <b>SHP livrables</b> — comptez <b>~2 à 3 minutes</b> (le Plan APD + folios est l'étape la plus longue). Vous pouvez laisser tourner.</p>
+            <div class="w-full h-2 bg-slate-100 rounded-full overflow-hidden mb-5">
+                <div id="dos-prog-global" class="h-full bg-gradient-to-r from-brand-400 to-brand-600 rounded-full" style="width:0%;transition:width .7s ease"></div>
+            </div>
+            <div id="dos-steps" class="space-y-2"></div>
+        </div>
+
+        <!-- Étape : succès -->
+        <div id="dos-etape-succes" class="hidden p-8 flex flex-col items-center justify-center gap-3 text-center bg-white animate-fadeIn">
+            <div class="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600">
+                <svg class="h-9 w-9" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+            </div>
+            <h3 class="text-base font-bold text-slate-800">Dossier complet généré</h3>
+            <p class="text-sm text-slate-500">Tous les livrables ont été générés avec succès.</p>
+            <p id="dos-succes-path" class="text-[11px] text-slate-400 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2 break-all w-full"></p>
+            <div class="flex gap-2 mt-2">
+                <button onclick="fermerModalDossier()" class="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 border border-slate-200 rounded-lg transition">Terminer</button>
+                <button onclick="ouvrirPdfDossier()" class="px-5 py-2 text-xs font-semibold bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition shadow-sm flex items-center gap-1.5">
+                    <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                    Ouvrir le PDF APD
+                </button>
+            </div>
+        </div>
+
+        <!-- Étape : erreur -->
+        <div id="dos-etape-erreur" class="hidden p-8 flex flex-col items-center justify-center gap-3 text-center bg-white animate-fadeIn">
+            <div class="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center text-red-600">
+                <svg class="h-9 w-9" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+            </div>
+            <h3 class="text-base font-bold text-slate-800">Génération interrompue</h3>
+            <p id="dos-erreur-msg" class="text-sm text-slate-500"></p>
+            <div class="flex gap-2 mt-2">
+                <button onclick="fermerModalDossier()" class="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 transition">Fermer</button>
+                <button onclick="ouvrirModalDossier()" class="px-4 py-2 text-xs font-semibold bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition shadow-sm">Réessayer</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts_extra %}
@@ -709,6 +765,15 @@
 .pds-progress-bar { width: 35%; animation: pdsProgress 1.1s ease-in-out infinite; }
 .apd-drop { border: 2px dashed #cbd5e1; transition: all 0.2s; }
 .apd-drop:hover, .apd-drop.drag-over { border-color: #14b8a6; background: #f0fdfa; }
+/* Stepper de génération APD */
+.apd-step { border: 1px solid #e8edec; transition: background .3s, border-color .3s, box-shadow .3s, transform .3s; }
+.apd-step.actif { transform: translateX(2px); }
+@keyframes apdPulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+.apd-pulse { animation: apdPulse 1.1s ease-in-out infinite; }
+@keyframes apdDots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
+.apd-dots::after { content: ''; animation: apdDots 1.4s steps(1) infinite; }
+.apd-desc { max-height: 0; opacity: 0; overflow: hidden; transition: max-height .4s ease, opacity .4s ease; }
+.apd-step.actif .apd-desc { max-height: 60px; opacity: 1; }
 /* Boutons de génération verrouillés tant que la MAJ Shapes n'est pas faite */
 .btn-verrouille { opacity: 0.4 !important; cursor: not-allowed !important; filter: grayscale(1); }
 </style>
@@ -939,7 +1004,155 @@
             });
     }
 
-    // 2) génération effective
+    // 2) génération du plan APD seul (PDF, avec/sans plan de masse) : voir apdLancer().
+
+    // ===== STEPPER « DOSSIER COMPLET » (bouton « Générer le Dossier Complet ») =====
+    // Génère TOUT en séquence. Chaque étape est un VRAI appel backend : elle passe en
+    // « Terminé » quand la réponse arrive (barre de remplissage animée pendant l'attente,
+    // chrono réel). En cas d'échec, la séquence s'arrête sur l'étape fautive.
+    const DOSSIER_ETAPES = [
+        { key: 'shape',   t: "Cartographie SHP livrable", d: "Vérification des SHP livrables (source de vérité de tous les documents).", dur: 12000 },
+        { key: 'rapport', t: "Plan APD + folios",         d: "Dossier APD : plan (fond Plan IGN), synthèse, appuis C6/C7, boîtes BPE, puis 2ᵉ série de plans A3 (folios). Étape la plus longue.", dur: 120000 },
+        { key: 'pds',     t: "Plan de câblage (PDS)",     d: "Génération du Plan de câblage (Excel).", dur: 8000 },
+        { key: 'syno',    t: "Plan Synoptique",           d: "Architecture réseau (PDF) depuis les SHP livrables.", dur: 15000 },
+        { key: 'kmz',     t: "Cartographie KMZ",          d: "Export Google Earth (.kmz) depuis les SHP livrables.", dur: 10000 },
+    ];
+    let _dosChrono = null, _dosT0 = 0, _dosIdx = -1, _dosEnCours = false;
+    const _DOS_SPIN = '<svg class="animate-spin h-3.5 w-3.5 text-brand-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>';
+    const _DOS_CHECK = '<svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>';
+    const _BTN_UNIT_CLS = 'text-brand-600 hover:text-white border border-brand-600 hover:bg-brand-600 font-medium text-xs py-1.5 px-3 rounded transition-colors';
+
+    function _dosEtape(etape) {
+        ['loading', 'succes', 'erreur'].forEach(e => {
+            const el = document.getElementById('dos-etape-' + e);
+            if (el) el.classList.toggle('hidden', e !== etape);
+        });
+    }
+
+    function _dosStepBuild() {
+        document.getElementById('dos-steps').innerHTML = DOSSIER_ETAPES.map((e, i) =>
+            `<div id="dos-step-${i}" class="apd-step flex items-start gap-3 rounded-xl p-3">
+               <div class="apd-ic w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-[11px] font-bold bg-slate-100 text-slate-400">${i + 1}</div>
+               <div class="flex-1 min-w-0">
+                 <div class="flex items-center justify-between gap-2">
+                   <p class="apd-t text-sm font-semibold text-slate-500">${e.t}</p>
+                   <span class="apd-s text-[10px] font-semibold text-slate-300">En attente</span>
+                 </div>
+                 <p class="apd-desc text-[11px] text-slate-500 leading-snug">${e.d}</p>
+                 <div class="apd-b hidden mt-1.5 h-1 bg-slate-100 rounded-full overflow-hidden">
+                   <div class="apd-f h-full rounded-full bg-brand-500" style="width:0%"></div>
+                 </div>
+               </div>
+             </div>`).join('');
+        document.getElementById('dos-prog-global').style.width = '0%';
+    }
+
+    function _dosActiver(i) {
+        const el = document.getElementById('dos-step-' + i); if (!el) return;
+        _dosIdx = i;
+        el.classList.add('actif', 'bg-brand-50/40', 'shadow-sm');
+        el.style.borderColor = '#5eead4';
+        el.querySelector('.apd-t').className = 'apd-t text-sm font-semibold text-slate-800';
+        const s = el.querySelector('.apd-s'); s.textContent = 'En cours'; s.className = 'apd-s text-[10px] font-semibold text-brand-600 apd-pulse apd-dots';
+        const ic = el.querySelector('.apd-ic'); ic.className = 'apd-ic w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center bg-brand-100'; ic.innerHTML = _DOS_SPIN;
+        el.querySelector('.apd-b').classList.remove('hidden');
+        const f = el.querySelector('.apd-f');
+        f.style.transition = 'width ' + DOSSIER_ETAPES[i].dur + 'ms linear';
+        requestAnimationFrame(() => { f.style.width = '90%'; });
+        document.getElementById('dos-prog-global').style.width = Math.round(i / DOSSIER_ETAPES.length * 100) + '%';
+    }
+
+    function _dosTerminer(i, note) {
+        const el = document.getElementById('dos-step-' + i); if (!el) return;
+        el.classList.remove('actif', 'bg-brand-50/40', 'shadow-sm');
+        el.style.borderColor = '#a7f3d0';
+        el.querySelector('.apd-t').className = 'apd-t text-sm font-semibold text-slate-700';
+        const s = el.querySelector('.apd-s'); s.textContent = note || 'Terminé'; s.className = 'apd-s text-[10px] font-semibold text-emerald-600';
+        const ic = el.querySelector('.apd-ic'); ic.className = 'apd-ic w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center bg-emerald-100 text-emerald-600'; ic.innerHTML = _DOS_CHECK;
+        const f = el.querySelector('.apd-f'); if (f) { f.style.transition = 'width .3s'; f.style.width = '100%'; }
+        document.getElementById('dos-prog-global').style.width = Math.round((i + 1) / DOSSIER_ETAPES.length * 100) + '%';
+    }
+
+    function _dosErreur(i, msg) {
+        const el = document.getElementById('dos-step-' + i);
+        if (el) {
+            el.classList.remove('actif', 'bg-brand-50/40', 'shadow-sm');
+            el.style.borderColor = '#fca5a5';
+            const s = el.querySelector('.apd-s'); s.textContent = 'Échec'; s.className = 'apd-s text-[10px] font-semibold text-red-600';
+            const ic = el.querySelector('.apd-ic'); ic.className = 'apd-ic w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center bg-red-100 text-red-600 font-bold'; ic.textContent = '!';
+            const f = el.querySelector('.apd-f'); if (f) f.style.background = '#ef4444';
+        }
+        const em = document.getElementById('dos-erreur-msg');
+        if (em) em.textContent = (DOSSIER_ETAPES[i] ? DOSSIER_ETAPES[i].t + ' — ' : '') + (msg || 'Erreur inconnue');
+        setTimeout(() => _dosEtape('erreur'), 550);
+    }
+
+    function _dosChronoStart() {
+        _dosT0 = Date.now();
+        _dosChrono = setInterval(() => {
+            const s = Math.floor((Date.now() - _dosT0) / 1000);
+            const el = document.getElementById('dos-chrono');
+            if (el) el.textContent = String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+        }, 1000);
+    }
+    function _dosChronoStop() { clearInterval(_dosChrono); }
+
+    // Ouvre le modal et lance la génération complète (tout en séquence).
+    function ouvrirModalDossier() {
+        if (_dosEnCours) { document.getElementById('modal-dossier').classList.remove('hidden'); return; }
+        _dosStepBuild();
+        _dosEtape('loading');
+        document.getElementById('dos-chrono').textContent = '00:00';
+        document.getElementById('modal-dossier').classList.remove('hidden');
+        dossierLancer();
+    }
+
+    async function dossierLancer() {
+        _dosEnCours = true;
+        _dosIdx = -1;
+        _dosChronoStart();
+        const base = '/api/projets/{{ projet.id }}/generer-etude/';
+        let dernier = {};
+        for (let i = 0; i < DOSSIER_ETAPES.length; i++) {
+            const e = DOSSIER_ETAPES[i];
+            _dosActiver(i);
+            // SHP déjà à jour (verrou « MAJ Shapes » levé) : on n'écrase pas les éditions livrables.
+            if (e.key === 'shape' && currentShpGenere && !shapesAMaj) {
+                _dosTerminer(i, 'déjà à jour');
+                continue;
+            }
+            try {
+                const r = await fetch(base + e.key + '?mode=overwrite', { method: 'POST' });
+                const data = await r.json();
+                if (!r.ok || data.error) throw new Error(data.detail || data.error || 'Erreur inconnue');
+                if (e.key === 'shape') {
+                    currentShpGenere = true; shapesAMaj = false; _appliquerEtatMajShapes(false);
+                    const bk = document.getElementById('btn-kmz');
+                    if (bk) { bk.removeAttribute('disabled'); bk.removeAttribute('title'); bk.setAttribute('onclick', 'genererKmz()'); bk.className = _BTN_UNIT_CLS; }
+                }
+                if (e.key === 'rapport') apdUrl = data.pdf_url || apdUrl;
+                dernier = data;
+                _dosTerminer(i);
+            } catch (err) {
+                console.error(err);
+                _dosEnCours = false;
+                _dosChronoStop();
+                _dosErreur(i, err.message || String(err));
+                return;
+            }
+        }
+        _dosEnCours = false;
+        _dosChronoStop();
+        document.getElementById('dos-prog-global').style.width = '100%';
+        document.getElementById('dos-succes-path').textContent = dernier.path || '';
+        document.getElementById('resultat-generation').classList.remove('hidden');
+        document.getElementById('dossier-path').textContent = dernier.path || '';
+        setTimeout(() => _dosEtape('succes'), 700);
+    }
+
+    function fermerModalDossier() { document.getElementById('modal-dossier').classList.add('hidden'); }
+    function ouvrirPdfDossier() { if (apdUrl) window.open(apdUrl + '?_t=' + Date.now(), '_blank'); }
+
     function apdLancer() {
         apdUrl = null;
         _apdEtape('loading');

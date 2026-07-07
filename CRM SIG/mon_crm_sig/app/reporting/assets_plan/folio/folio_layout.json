@@ -1,0 +1,71 @@
+{
+ "page": "420,297,mm",
+ "items": [
+  {
+   "type": "65638",
+   "pos": "0,0,mm",
+   "size": "420,297,mm",
+   "id": ""
+  },
+  {
+   "type": "65641",
+   "pos": "187.23,281.917,mm",
+   "size": "232.505,14.9385,mm",
+   "id": "RUE LARGE -68790 - MORSCHWILLER-LE-BAS",
+   "text": "RUE LARGE -68790 - MORSCHWILLER-LE-BAS"
+  },
+  {
+   "type": "65640",
+   "pos": "2.38379,134.795,mm",
+   "size": "27.9364,27.4094,mm",
+   "id": "",
+   "image": "folio_pic0.svg"
+  },
+  {
+   "type": "65639",
+   "pos": "0,164.169,mm",
+   "size": "119.705,102.666,mm",
+   "id": "Carte 2"
+  },
+  {
+   "type": "65642",
+   "pos": "0.15,0.15,mm",
+   "size": "119.405,163.869,mm",
+   "id": ""
+  },
+  {
+   "type": "65640",
+   "pos": "0.15,266.985,mm",
+   "size": "43.8584,30.015,mm",
+   "id": "",
+   "image": "folio_pic1.png"
+  },
+  {
+   "type": "65640",
+   "pos": "364.446,266.985,mm",
+   "size": "55.4044,30.015,mm",
+   "id": "",
+   "image": "folio_pic2.png"
+  },
+  {
+   "type": "65641",
+   "pos": "315.812,266.985,mm",
+   "size": "48.3336,29.8649,mm",
+   "id": "",
+   "text": "[%concat('FOLIO ', @atlas_featurenumber ,'/', @atlas_totalfeatures )%]"
+  },
+  {
+   "type": "65641",
+   "pos": "44.3084,266.985,mm",
+   "size": "271.204,29.865,mm",
+   "id": "",
+   "text": "[%CASE\nWHEN length( @project_basename ) = 10 or length( @project_basename ) = 8\nTHEN\nattribute(get_feature('NRO_RIP','TYPE_FONCT','NOEUD DE RACCORDEMENT OPTIQUE' ) ,'CODE') ||  '\\n'  ||\nattribute(get_feature('NRO_RIP','TYPE_FONCT','NOEUD DE RACCORDEMENT OPTIQUE' ) ,'ADRESSE') ||' - ' ||   attribute(get_feature('NRO_RIP','TYPE_FONCT','NOEUD DE RACCORDEMENT OPTIQUE') ,'CP') || ' ' || attribute(get_feature('NRO_RIP','TYPE_FONCT','NOEUD DE RACCORDEMENT OPTIQUE') ,'VILLE')\n\n\nWHEN length( @project_basename ) = 12\nTHEN\nsubstr(attribute(get_feature('BTS','TYPE_FONCT','FM' ) ,'REF_PHFM'),1,19) ||  '\\n'  ||\nattribute(get_feature('BTS','TYPE_FONCT','FM' ) ,'ADRESSE') ||' - ' ||   attribute(get_feature('BTS','TYPE_FONCT','FM') ,'CP') || ' ' || attribute(get_feature('BTS','TYPE_FONCT','FM') ,'VILLE')\n\n\nWHEN length( @project_basename ) = 5\nTHEN\nattribute(get_feature('NRA','TYPE_FONCT','NOEUD DE RACCORDEMENT' ) ,'NOM') ||  '\\n'  ||\nattribute(get_feature('NRA','TYPE_FONCT','NOEUD DE RACCORDEMENT' ) ,'ADRESSE') ||' - ' ||   attribute(get_feature('NRA','TYPE_FONCT','NOEUD DE RACCORDEMENT') ,'CP') || ' ' || attribute(get_feature('NRA','TYPE_FONCT','NOEUD DE RACCORDEMENT') ,'VILLE')\n\n\n\nWHEN length( @project_basename ) = 11\nTHEN\n\nattribute(get_feature('NRA','NOM',substr(@project_basename,1,5) ) ,'NOM') ||  ' : '  ||\nattribute(get_feature('NRA','NOM',substr(@project_basename,1,5) ) ,'ADRESSE') ||' ' ||   attribute(get_feature('NRA','NOM',substr(@project_basename,1,5) ) ,'CP') || ' ' || attribute(get_feature('NRA','NOM',substr(@project_basename,1,5) ) ,'VILLE')\n||  '\\n'  ||\nattribute(get_feature('NRA','NOM',substr(@project_basename,7,5) ) ,'NOM') ||  ' : '  ||\nattribute(get_feature('NRA','NOM',substr(@project_basename,7,5) ) ,'ADRESSE') ||' ' ||   attribute(get_feature('NRA','NOM',substr(@project_basename,7,5) ) ,'CP') || ' ' || attribute(get_feature('NRA','NOM',substr(@project_basename,7,5) ) ,'VILLE')\n\nEND%]"
+  },
+  {
+   "type": "65639",
+   "pos": "120.005,0.3,mm",
+   "size": "299.995,266.535,mm",
+   "id": "Carte 1"
+  }
+ ]
+}

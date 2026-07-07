@@ -17,6 +17,9 @@ ENV/
 CRM SIG/mon_crm_sig/crm_sig.db
 CRM SIG/mon_crm_sig/app/static/projects_data/
 
+# === Données de test locales (SHP, C6/C7, QGIS) — hors dépôt ===
+INPUT ET TEST/
+
 # === Logs ===
 *.log
 

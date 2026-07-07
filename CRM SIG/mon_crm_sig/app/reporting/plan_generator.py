@@ -584,12 +584,14 @@ _MARQUEURS = {"circle": "o", "diamond": "D", "square": "s", "triangle": "^",
               "cross": "X", "arrow": _ARROW}
 
 
-def _dessiner_couches(ax, couches, x0, y0, x1, y1, lw, ms):
+def _dessiner_couches(ax, couches, x0, y0, x1, y1, lw, ms, natures=None):
     """Dessine les couches selon la symbologie NETGEO (ordre QGIS).
 
     Comme le plan de référence : SUPPORT non étiqueté, câbles étiquetés le long
     de la ligne, étiquettes de points anti-chevauchement (filtre de distance).
+    ``natures`` : {NOM_poteau: nature} (annexes C6/C7) pour colorer les poteaux FT.
     """
+    natures = natures or {}
     pts_lbl = []   # (x, y, texte, couleur, taille_marqueur_mm)
     for i_ordre, nom in enumerate(symb.ORDRE_DESSIN):
         g = couches.get(nom)
@@ -600,7 +602,8 @@ def _dessiner_couches(ax, couches, x0, y0, x1, y1, lw, ms):
             geom = r.geometry
             if geom is None:
                 continue
-            st = symb.style_de(nom, r)
+            nat = natures.get(str(r.get("NOM") or "").strip()) if (nom == "PT" and natures) else None
+            st = symb.style_de(nom, r, nat)
             if st is None:
                 continue
 
@@ -716,7 +719,8 @@ def _legende_encart(fig, l_mm, h_mm, x_mm, y_mm, w_mm, h_box_mm, blocs):
 
 
 def generer_plan_apd(dossier_shape: str, chemin_pdf: str,
-                     orientation: str = "paysage", titre: str = None) -> str:
+                     orientation: str = "paysage", titre: str = None,
+                     natures: dict = None) -> str:
     """
     Plan APS/APD (page 1 du livrable APD) : fond Plan IGN + symbologie NETGEO
     exacte (formes/couleurs QGIS) + légende à droite + rose des vents + échelle.
@@ -789,7 +793,7 @@ def generer_plan_apd(dossier_shape: str, chemin_pdf: str,
         couches["COMMUNE"].boundary.plot(ax=ax, color="black", linewidth=lw(0.3), alpha=0.4)
 
     # couches (symbologie NETGEO) + étiquettes
-    _dessiner_couches(ax, couches, x0, y0, x1, y1, lw, ms)
+    _dessiner_couches(ax, couches, x0, y0, x1, y1, lw, ms, natures=natures)
 
     # commune (label) au centre
     g = couches["COMMUNE"]
@@ -827,7 +831,7 @@ def generer_plan_apd(dossier_shape: str, chemin_pdf: str,
                 path_effects=_tampon(0.6))
 
     # légende dynamique (uniquement les catégories présentes), encart haut-droite
-    blocs = symb.legende_dynamique(couches)
+    blocs = symb.legende_dynamique(couches, natures)
     if blocs:
         leg_w = 58.0
         leg_h = min(_hauteur_legende(blocs), h_mm - 2 * marge - 4)
@@ -841,4 +845,278 @@ def generer_plan_apd(dossier_shape: str, chemin_pdf: str,
     if not est_png:
         _compresser_fond(chemin_pdf)
     logger.info(f"Plan APD (APS/APD) généré : {chemin_pdf}")
+    return chemin_pdf
+
+
+# ---------------------------------------------------------------------------
+# 2ᵉ série de plans : FOLIOS (A3 paysage) — vue d'ensemble + un folio par page.
+# Mise en page calée sur les layouts « FOLIO » et « FOLIO-VUE D'ENSEMBLE-A3 »
+# de CODE_PROJET.qgz (positions/tailles en mm, logos + rose extraits du gabarit).
+# ---------------------------------------------------------------------------
+
+_A3_L, _A3_H = 420.0, 297.0                      # A3 paysage (mm)
+_FOLIO_ASSETS = os.path.join(ASSETS, "folio")
+_BLEU_FOLIO = "#1f4fd6"
+_ROUGE_FOLIO = "#d00000"
+
+
+def _lw(mm_):
+    return max(mm_, 0) * PT_PAR_MM
+
+
+def _ms(mm_):
+    return mm_ * PT_PAR_MM
+
+
+def _img_folio(nom):
+    for base in (_FOLIO_ASSETS, ASSETS):
+        p = os.path.join(base, nom)
+        if os.path.exists(p):
+            try:
+                return mpimg.imread(p)
+            except Exception:
+                pass
+    return None
+
+
+def _ax_mm(fig, x_mm, y_top_mm, w_mm, h_mm):
+    """Axe positionné en mm (origine HAUT-gauche, comme QGIS) sur la page A3."""
+    return fig.add_axes([x_mm / _A3_L, (_A3_H - y_top_mm - h_mm) / _A3_H,
+                         w_mm / _A3_L, h_mm / _A3_H])
+
+
+def _cadrer(ext, w_mm, h_mm):
+    """Étend l'emprise pour remplir un cadre w×h (mm) en gardant le ratio 1:1."""
+    x0, y0, x1, y1 = ext
+    ratio = h_mm / w_mm
+    dx, dy = max(x1 - x0, 1.0), max(y1 - y0, 1.0)
+    if dy / dx < ratio:
+        s = dx * ratio - dy
+        y0, y1 = y0 - s / 2, y1 + s / 2
+    else:
+        s = dy / ratio - dx
+        x0, x1 = x0 - s / 2, x1 + s / 2
+    return x0, y0, x1, y1
+
+
+def _charger_couches_folio(dossier_shape):
+    noms = ("BPE", "BTS", "CABLES", "COMMUNE", "NRA", "NRO_RIP", "PT", "SUPPORT", "BLOCAGE")
+    out = {}
+    for n in noms:
+        g = _lire(dossier_shape, n)
+        try:
+            out[n] = g.to_crs(3857) if (g is not None and g.crs) else g
+        except Exception:
+            out[n] = g
+    return out
+
+
+def _emprise(couches, cles=("CABLES", "SUPPORT", "BPE", "BTS", "PT"), marge=0.10):
+    b = None
+    for n in cles:
+        g = couches.get(n)
+        if g is None or len(g) == 0:
+            continue
+        t = g.total_bounds
+        b = t if b is None else (min(b[0], t[0]), min(b[1], t[1]),
+                                 max(b[2], t[2]), max(b[3], t[3]))
+    if b is None and couches.get("COMMUNE") is not None:
+        b = couches["COMMUNE"].total_bounds
+    x0, y0, x1, y1 = b
+    dx, dy = max(x1 - x0, 50), max(y1 - y0, 50)
+    return (x0 - dx * marge, y0 - dy * marge, x1 + dx * marge, y1 + dy * marge)
+
+
+def _titre_lieu(couches):
+    ad = cp = com = ""
+    for n in ("BTS", "NRA", "NRO_RIP", "BPE", "PT"):
+        g = couches.get(n)
+        if g is None:
+            continue
+        for _, r in g.iterrows():
+            if not ad:
+                ad = _val(r, "ADRESSE")
+            if not cp:
+                cp = _val(r, "CP") or _val(r, "CODE_POSTA")
+        if ad:
+            break
+    g = couches.get("COMMUNE")
+    if g is not None and len(g):
+        com = _val(g.iloc[0], "NOM")
+    parts = [p for p in (ad, cp, com) if p]
+    return " - ".join(parts).upper() if parts else "PLAN"
+
+
+def _charger_folios(folios_shp, couches):
+    """[(id, (x0,y0,x1,y1) en 3857)] triés par id ; auto-génère si SHP absent."""
+    if folios_shp and os.path.exists(folios_shp):
+        try:
+            g = gpd.read_file(folios_shp)
+            g = g.to_crs(3857) if g.crs else g
+            col_id = "id" if "id" in g.columns else None
+            recs = []
+            for i, (_, r) in enumerate(g.iterrows(), 1):
+                fid = r[col_id] if (col_id and r[col_id] == r[col_id]) else i
+                if r.geometry is not None:
+                    recs.append((int(float(fid)), tuple(r.geometry.bounds)))
+            if recs:
+                recs.sort(key=lambda x: x[0])
+                # Renumérotation séquentielle 1..N : l'id affiché = l'index de page
+                # (évite toute divergence titre « FOLIO n/N » / cadre surligné si le
+                # SHP porte des id non contigus, ex. édité sous QGIS).
+                return [(i, b) for i, (_, b) in enumerate(recs, 1)]
+        except Exception as e:
+            logger.warning(f"FOLIO_LIVRABLES illisible ({e}) — auto-génération.")
+    return _folios_auto(couches)
+
+
+def _folios_auto(couches, max_folios=4):
+    """Quadrille l'emprise réseau en au plus ``max_folios`` cadres. La subdivision
+    ncol×nrow (≤ max_folios) est choisie pour épouser l'aspect du réseau — y
+    compris les corridors très étroits/longs (FTTH le long des routes). Le cadrage
+    A4/A3 (`_cadrer`) étend ensuite chaque cellule au ratio de la page."""
+    x0, y0, x1, y1 = _emprise(couches, marge=0.03)
+    dx, dy = max(x1 - x0, 1.0), max(y1 - y0, 1.0)
+    # Découpe selon une taille de cellule cible (détail lisible) qui agrandit
+    # LES DEUX dimensions jusqu'à respecter le plafond — évite l'explosion pour
+    # les corridors étroits/longs (le nombre de folios suit la taille du réseau).
+    cible = 450.0
+    ncol = nrow = 1
+    for _ in range(24):
+        ncol = max(1, int(math.ceil(dx / cible)))
+        nrow = max(1, int(math.ceil(dy / cible)))
+        if ncol * nrow <= max_folios:
+            break
+        cible *= 1.3
+    cellw, cellh = dx / ncol, dy / nrow
+    folios, fid = [], 1
+    for j in range(nrow):
+        cy0 = y0 + j * cellh
+        for i in range(ncol):
+            cx0 = x0 + i * cellw
+            folios.append((fid, (cx0, cy0, cx0 + cellw, cy0 + cellh)))
+            fid += 1
+    return folios[:max_folios]   # garantie dure du plafond
+
+
+def _carte(ax, couches, ext, fond=True, natures=None):
+    x0, y0, x1, y1 = ext
+    ax.set_xticks([]); ax.set_yticks([])
+    for c in ax.spines.values():
+        c.set_linewidth(0.7)
+    ax.set_xlim(x0, x1); ax.set_ylim(y0, y1)
+    ax.set_aspect("equal", adjustable="box")
+    if fond:
+        _fond_carte(ax, x0, y0, x1, y1, url=FOND_IGN_URL)
+    _dessiner_couches(ax, couches, x0, y0, x1, y1, _lw, _ms, natures=natures)
+
+
+def _rects_folios(ax, folios, courant=None):
+    for fid, b in folios:
+        actif = (fid == courant)
+        coul = _ROUGE_FOLIO if actif else _BLEU_FOLIO
+        ax.add_patch(Rectangle((b[0], b[1]), b[2] - b[0], b[3] - b[1], fill=False,
+                               edgecolor=coul, linewidth=_lw(1.1 if actif else 0.6), zorder=20))
+        ax.text(b[2] - (b[2] - b[0]) * 0.03, b[1] + (b[3] - b[1]) * 0.03, str(fid),
+                fontsize=13, fontweight="bold", color=coul, ha="right", va="bottom",
+                zorder=21, path_effects=_tampon(0.8))
+
+
+def _legende_gauche(fig, couches, x_mm, y_top_mm, w_mm, h_mm, natures=None):
+    blocs = symb.legende_dynamique(couches, natures)
+    if not blocs:
+        return
+    hb = min(_hauteur_legende(blocs), h_mm)
+    # _legende_encart attend y_mm depuis le BAS
+    y_bas = _A3_H - y_top_mm - hb
+    _legende_encart(fig, _A3_L, _A3_H, x_mm, y_bas, w_mm, hb, blocs)
+
+
+def _cartouche_folio(fig, titre, mention):
+    by, bh = 266.985, 30.015
+    # cadre + séparateurs
+    axc = _ax_mm(fig, 0, by, _A3_L, bh); axc.set_axis_off()
+    axc.add_patch(Rectangle((0, 0), 1, 1, transform=axc.transAxes, fill=False,
+                            edgecolor="black", linewidth=1.0))
+    for xf in (44.0 / _A3_L, 315.0 / _A3_L, 363.0 / _A3_L):
+        axc.plot([xf, xf], [0, 1], transform=axc.transAxes, color="black", linewidth=0.7)
+    free = _img_folio("folio_pic1.png")
+    if free is None:
+        free = _img_folio("logo_free.png")
+    ensio = _img_folio("folio_pic2.png")
+    if ensio is None:
+        ensio = _img_folio("logo_ensio.png")
+    if free is not None:
+        a = _ax_mm(fig, 2.5, by + 3, 39, bh - 6); a.set_axis_off(); a.imshow(free)
+    if ensio is not None:
+        a = _ax_mm(fig, _A3_L - 56, by + 3, 53, bh - 6); a.set_axis_off(); a.imshow(ensio)
+    at = _ax_mm(fig, 46, by, 267, bh); at.set_axis_off()
+    at.text(0.5, 0.5, titre, ha="center", va="center", fontsize=19, fontweight="bold")
+    am = _ax_mm(fig, 316, by, 47, bh); am.set_axis_off()
+    am.text(0.5, 0.5, mention, ha="center", va="center", fontsize=11, fontweight="bold")
+
+
+def _rose_folio(fig, x_mm, y_top_mm, taille_mm):
+    rose = _img_folio("rose_nord.png")
+    if rose is None:
+        return
+    a = _ax_mm(fig, x_mm, y_top_mm, taille_mm, taille_mm)
+    a.set_axis_off(); a.imshow(rose)
+
+
+def _page_ensemble(couches, folios, titre, natures=None):
+    fig = plt.figure(figsize=(_A3_L * MM, _A3_H * MM))
+    # carte principale (quasi pleine page) : layout ensemble « Carte 1 »
+    mx, my, mw, mh = 48.219, 0.25, 371.631, 272.724
+    ax = _ax_mm(fig, mx, my, mw, mh)
+    ext = _cadrer(_emprise(couches), mw, mh)
+    _carte(ax, couches, ext, fond=True, natures=natures)
+    _rects_folios(ax, folios)
+    # légende (colonne gauche étroite) + rose
+    _legende_gauche(fig, couches, 1.0, 2.0, 46.0, 230.0, natures=natures)
+    _rose_folio(fig, 11.3, 233.2, 26.0)
+    _cartouche_folio(fig, titre, "VUE D'ENSEMBLE")
+    return fig
+
+
+def _page_folio(couches, folios, ext_folio, num, total, emprise_glob, titre, natures=None):
+    fig = plt.figure(figsize=(_A3_L * MM, _A3_H * MM))
+    # carte principale (droite) : layout FOLIO « Carte 1 »
+    mx, my, mw, mh = 120.005, 0.3, 299.995, 266.535
+    ax = _ax_mm(fig, mx, my, mw, mh)
+    ext = _cadrer(ext_folio, mw, mh)
+    _carte(ax, couches, ext, fond=True, natures=natures)
+    # colonne gauche : légende (haut) + rose + carte de localisation (bas)
+    _legende_gauche(fig, couches, 1.0, 1.0, 115.0, 130.0, natures=natures)
+    _rose_folio(fig, 2.38, 134.8, 27.9)
+    lx, ly, lw_, lh = 0.0, 164.169, 119.705, 102.666
+    axl = _ax_mm(fig, lx, ly, lw_, lh)
+    ext_loc = _cadrer(emprise_glob, lw_, lh)
+    _carte(axl, couches, ext_loc, fond=True, natures=natures)
+    _rects_folios(axl, folios, courant=num)
+    _cartouche_folio(fig, titre, f"FOLIO {num}/{total}")
+    return fig
+
+
+def generer_folios_apd(dossier_shape: str, chemin_pdf: str, folios_shp: str = None,
+                       titre: str = None, natures: dict = None) -> str:
+    """2ᵉ série de plans APD (A3 paysage) : 1 page « Vue d'ensemble » + 1 page par
+    folio. Fond Plan IGN + symbologie NETGEO + légende, 100 % backend."""
+    from matplotlib.backends.backend_pdf import PdfPages
+    couches = _charger_couches_folio(dossier_shape)
+    if all(v is None for v in couches.values()):
+        raise ValueError(f"Aucune couche exploitable dans {dossier_shape}")
+    folios = _charger_folios(folios_shp, couches)
+    titre = titre or _titre_lieu(couches)
+    emprise_glob = _emprise(couches)
+
+    os.makedirs(os.path.dirname(chemin_pdf), exist_ok=True)
+    with PdfPages(chemin_pdf) as pdf:
+        fig = _page_ensemble(couches, folios, titre, natures=natures)
+        pdf.savefig(fig, dpi=300); plt.close(fig)
+        for i, (fid, ext) in enumerate(folios, 1):
+            fig = _page_folio(couches, folios, ext, i, len(folios), emprise_glob, titre,
+                              natures=natures)
+            pdf.savefig(fig, dpi=300); plt.close(fig)
+    logger.info(f"Folios APD générés ({len(folios) + 1} pages) : {chemin_pdf}")
     return chemin_pdf

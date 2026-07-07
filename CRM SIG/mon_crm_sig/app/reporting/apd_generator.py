@@ -85,8 +85,14 @@ def _modele_boite(modele):
 # 1. Calcul de la synthèse (pré-remplissage de la console)
 # ---------------------------------------------------------------------------
 
-def calculer_synthese(dossier_shape: str, ref_projet: str = "", date_str: str = "") -> dict:
-    """Valeurs déductibles des SHP livrables pour la console / le rapport APD."""
+def calculer_synthese(dossier_shape: str, ref_projet: str = "", date_str: str = "",
+                      natures_appuis: dict = None) -> dict:
+    """Valeurs déductibles des SHP livrables pour la console / le rapport APD.
+
+    ``natures_appuis`` : dict optionnel {NOM_poteau: nature} issu des annexes C6/C7
+    (REMPLACEMENT / RECALAGE / RENFORCEMENT). S'il est fourni, les comptes d'appuis
+    à remplacer / recaler-renforcer en sont déduits ; sinon on retombe sur PT.ETAT."""
+    natures_appuis = natures_appuis or {}
     sup = _lire(dossier_shape, "SUPPORT")
     pt = _lire(dossier_shape, "PT")
     bpe = _lire(dossier_shape, "BPE")
@@ -148,10 +154,13 @@ def calculer_synthese(dossier_shape: str, ref_projet: str = "", date_str: str = 
             if _est_poteau(struc):
                 if "ETUDE" in etat:
                     appuis["implanter"] += 1
-                if "REMPLAC" in etat:
-                    appuis["remplacer"] += 1
-                if "RENFORC" in etat or "RECALAGE" in etat:
-                    appuis["recaler"] += 1
+                # Remplacer / recaler-renforcer : depuis les annexes C6/C7 si
+                # fournies (comptées plus bas), sinon repli sur PT.ETAT.
+                if not natures_appuis:
+                    if "REMPLAC" in etat:
+                        appuis["remplacer"] += 1
+                    if "RENFORC" in etat or "RECALAGE" in etat:
+                        appuis["recaler"] += 1
                 # comptage appuis aériens par proprio
                 if free:
                     aer_ap["free"] += 1
@@ -168,6 +177,16 @@ def calculer_synthese(dossier_shape: str, ref_projet: str = "", date_str: str = 
                     ch["blo"] += 1
                 else:
                     ch["tiers"] += 1
+
+    # Appuis à remplacer / recaler-renforcer depuis les annexes C6/C7 (par NOM,
+    # poteaux réellement présents dans PT). « recaler » regroupe recalage +
+    # renforcement (comme le libellé du rapport « à recaler/renforcer »).
+    if natures_appuis:
+        for nat in natures_appuis.values():
+            if nat == "REMPLACEMENT":
+                appuis["remplacer"] += 1
+            elif nat in ("RECALAGE", "RENFORCEMENT"):
+                appuis["recaler"] += 1
 
     # --- BPE : boîtes par modèle (nouvelles) + classement souterrain/aérien ---
     boites = {"ofdc": 0, "tenio": 0, "t0": 0, "t1": 0}

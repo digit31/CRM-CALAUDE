@@ -65,11 +65,11 @@
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mx-auto text-slate-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                     </svg>
-                    <p class="text-xs text-slate-500 font-medium">Glissez vos fichiers .shp ici</p>
+                    <p class="text-xs text-slate-500 font-medium">Glissez vos <b>couches SIG</b> (.shp) et <b>annexes Orange</b> (C6/C7 .xlsx)</p>
                     <p class="text-xs text-slate-400 mt-1">ou cliquez pour parcourir</p>
                     <p id="file-names" class="text-xs text-brand-600 font-semibold mt-2 hidden"></p>
                 </div>
-                <input type="file" id="file-input" name="fichiers" class="hidden" accept=".shp,.dbf,.shx,.prj,.cpg" multiple>
+                <input type="file" id="file-input" name="fichiers" class="hidden" accept=".shp,.dbf,.shx,.prj,.cpg,.xlsx,.xlsm,.xls" multiple>
                 <button type="submit" id="btn-upload" class="w-full mt-2 bg-brand-600 text-white py-2 px-4 rounded-lg text-xs font-semibold hover:bg-brand-700 transition shadow-sm hidden">
                     Importer les fichiers
                 </button>
@@ -343,6 +343,57 @@
         </div>
     </div>
 </div>
+
+<!-- ============ MODAL : ANNEXES C6/C7 (récapitulatif appuis) ============ -->
+<div id="modal-annexes" class="fixed inset-0 glass-bg hidden z-50 flex items-center justify-center animate-fadeIn p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
+        <div class="flex items-start justify-between p-5 border-b border-slate-100">
+            <div>
+                <h3 class="text-base font-bold text-slate-800">Annexes C6 / C7 — appuis concordants</h3>
+                <p class="text-xs text-slate-500 mt-0.5">Correspondance avec les poteaux du projet (par numéro ou géolocalisation).</p>
+            </div>
+            <button onclick="fermerModalAnnexes()" class="text-slate-400 hover:text-slate-600 transition p-1">
+                <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+        </div>
+        <div class="p-5 space-y-4 overflow-y-auto">
+            <!-- compteurs -->
+            <div class="grid grid-cols-3 gap-3">
+                <div class="rounded-xl bg-slate-50 border border-slate-100 p-3 text-center">
+                    <p id="ann-stat-match" class="text-2xl font-bold text-slate-800">0</p>
+                    <p class="text-[11px] font-medium text-slate-500 mt-0.5">Appuis trouvés</p>
+                </div>
+                <div class="rounded-xl bg-amber-50 border border-amber-100 p-3 text-center">
+                    <p id="ann-stat-rempl" class="text-2xl font-bold text-amber-700">0</p>
+                    <p class="text-[11px] font-medium text-amber-700/80 mt-0.5">À remplacer</p>
+                </div>
+                <div class="rounded-xl bg-orange-50 border border-orange-100 p-3 text-center">
+                    <p id="ann-stat-recal" class="text-2xl font-bold text-orange-700">0</p>
+                    <p class="text-[11px] font-medium text-orange-700/80 mt-0.5">Recaler/renforcer</p>
+                </div>
+            </div>
+            <!-- liste -->
+            <div class="rounded-xl border border-slate-100 overflow-hidden">
+                <table class="w-full text-xs">
+                    <thead class="bg-slate-50 text-slate-500"><tr><th class="py-1.5 px-2 text-left font-semibold">N° appui</th><th class="py-1.5 px-2 text-left font-semibold">Nature des travaux</th></tr></thead>
+                    <tbody id="ann-liste"></tbody>
+                </table>
+            </div>
+            <p id="ann-vide" class="hidden text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2"></p>
+            <p id="ann-nonmatch" class="hidden text-[11px] text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2"></p>
+            <!-- notices -->
+            <div class="rounded-xl bg-brand-50/50 border border-brand-100 p-3 text-xs text-slate-600 space-y-1">
+                <p class="flex items-start gap-1.5"><span class="text-brand-600 font-bold">→</span> Le <b>nom (NOM)</b> et le code des poteaux concordants seront mis à jour dans le SHP livrable.</p>
+                <p class="flex items-start gap-1.5"><span class="text-brand-600 font-bold">→</span> La <b>Console</b> sera mise à jour (appuis à remplacer / recaler).</p>
+                <p class="flex items-start gap-1.5"><span class="text-amber-600 font-bold">⚠</span> <b>Régénération des SHP obligatoire</b> pour appliquer la mise à jour du PT.</p>
+            </div>
+        </div>
+        <div class="p-4 border-t border-slate-100 bg-slate-50/60 flex justify-end gap-2">
+            <button onclick="fermerModalAnnexes()" class="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 border border-slate-200 rounded-lg transition">Plus tard</button>
+            <button onclick="regenererDepuisAnnexes()" class="px-5 py-2 text-xs font-semibold bg-brand-600 text-white rounded-lg hover:bg-brand-700 shadow-sm transition">Régénérer les SHP maintenant</button>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts_extra %}
@@ -541,12 +592,26 @@
     dropZone.addEventListener('drop', function(e) {
         e.preventDefault();
         this.classList.remove('drag-over');
-        fileInput.files = e.dataTransfer.files;
-        afficherFichiers(e.dataTransfer.files);
+        routerFichiers(e.dataTransfer.files);
     });
     fileInput.addEventListener('change', function() {
-        afficherFichiers(this.files);
+        routerFichiers(this.files);
     });
+
+    // Sépare les couches SIG (.shp…) des annexes Orange (.xlsx = C6/C7)
+    function routerFichiers(files) {
+        const arr = Array.from(files);
+        const estXlsx = f => /\.(xlsx|xlsm|xls)$/i.test(f.name);
+        const xlsx = arr.filter(estXlsx);
+        const shp = arr.filter(f => !estXlsx(f));
+        if (xlsx.length) traiterAnnexes(xlsx);
+        if (shp.length) {
+            const dt = new DataTransfer();
+            shp.forEach(f => dt.items.add(f));
+            fileInput.files = dt.files;
+            afficherFichiers(dt.files);
+        }
+    }
 
     function afficherFichiers(files) {
         if (files.length > 0) {
@@ -555,6 +620,69 @@
             fileNames.classList.remove('hidden');
             btnUpload.classList.remove('hidden');
         }
+    }
+
+    // ===== ANNEXES C6/C7 : upload (auto-détection) + récapitulatif =====
+    const SHP_GENERE = {{ shp_genere | tojson }};
+    function traiterAnnexes(files) {
+        if (!SHP_GENERE) {
+            alert("Générez d'abord les SHP livrables : les couches livrables doivent être présentes avant d'ajouter les annexes C6 / C7.");
+            return;
+        }
+        let dernierApercu = null;
+        let chaine = Promise.resolve();
+        files.forEach(function (f) {
+            chaine = chaine.then(function () {
+                const fd = new FormData();
+                fd.append('fichier', f);
+                return fetch('/api/projets/' + projetId + '/annexes/auto', { method: 'POST', body: fd })
+                    .then(r => r.json().then(d => ({ ok: r.ok, d })))
+                    .then(function (res) {
+                        if (!res.ok) throw new Error(res.d.detail || 'Envoi impossible');
+                        dernierApercu = res.d.apercu;
+                    });
+            });
+        });
+        chaine.then(function () { if (dernierApercu) ouvrirModalAnnexes(dernierApercu); })
+              .catch(err => alert('Erreur : ' + err.message));
+    }
+
+    function ouvrirModalAnnexes(a) {
+        const c = a.counts || {};
+        document.getElementById('ann-stat-rempl').textContent = c.remplacer || 0;
+        document.getElementById('ann-stat-recal').textContent = (c.recaler || 0) + (c.renforcer || 0);
+        document.getElementById('ann-stat-match').textContent = (a.matched || []).length;
+        const tb = document.getElementById('ann-liste'); tb.innerHTML = '';
+        (a.matched || []).forEach(m => {
+            const tr = document.createElement('tr');
+            tr.className = 'border-t border-slate-100';
+            tr.innerHTML = '<td class="py-1.5 px-2 font-mono">' + m.num + '</td>' +
+                '<td class="py-1.5 px-2">' + (m.nature || '—') + '</td>';
+            tb.appendChild(tr);
+        });
+        const nm = document.getElementById('ann-nonmatch');
+        if (a.non_matched && a.non_matched.length) {
+            nm.textContent = a.non_matched.length + " appui(s) de l'annexe non trouvé(s) dans le PT : " + a.non_matched.join(', ');
+            nm.classList.remove('hidden');
+        } else { nm.classList.add('hidden'); }
+        // Message si aucun appui concordant (pour comprendre pourquoi)
+        const vide = document.getElementById('ann-vide');
+        if (!(a.matched || []).length) {
+            vide.textContent = a.total
+                ? "Aucun appui de l'annexe ne correspond au PT de ce projet. Vérifiez qu'il s'agit bien de l'affaire concernée (commune / numéros d'appui)."
+                : "Aucun appui lu dans l'annexe. Vérifiez le fichier C6 (feuille « Export 1 ») ou C7.";
+            vide.classList.remove('hidden');
+        } else { vide.classList.add('hidden'); }
+        document.getElementById('modal-annexes').classList.remove('hidden');
+    }
+
+    function fermerModalAnnexes() {
+        document.getElementById('modal-annexes').classList.add('hidden');
+    }
+
+    function regenererDepuisAnnexes() {
+        fermerModalAnnexes();
+        creerShpDepuisIci();   // relance la génération/MAJ des SHP livrables
     }
 
     // ===== SOUMISSION UPLOAD (fetch + détection câbles APD FO) =====
