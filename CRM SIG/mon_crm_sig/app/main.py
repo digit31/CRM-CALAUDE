@@ -1604,8 +1604,11 @@ def api_generer_etude(projet_id: int, type_etude: str, mode: str = "overwrite", 
             try:
                 folios_shp = _folios_shp_projet(projet, dossier_shape)
                 chemin_folios = os.path.join(dossier_global, f"folios_{ref_propre}.pdf")
+                code_projet = (donnees.get("cartouche", {}) or {}).get("code_projet", "") \
+                    or (projet.reference or "")
                 plan_generator.generer_folios_apd(dossier_shape, chemin_folios,
-                                                  folios_shp=folios_shp, natures=natures)
+                                                  folios_shp=folios_shp, natures=natures,
+                                                  code_projet=code_projet)
                 if os.path.exists(chemin_folios):
                     import fitz as _fitz
                     doc = _fitz.open(chemin_pdf)
@@ -1617,6 +1620,12 @@ def api_generer_etude(projet_id: int, type_etude: str, mode: str = "overwrite", 
                     os.replace(tmp, chemin_pdf)
             except Exception as e:
                 logger.warning(f"Folios APD non fusionnés (projet {projet.id}) : {e}")
+
+            # Recompression JPEG des fonds de carte (ortho lourde) : ~50 Mo -> ~18 Mo.
+            try:
+                plan_generator._compresser_fond(chemin_pdf)
+            except Exception as e:
+                logger.warning(f"Recompression APD ignorée (projet {projet.id}) : {e}")
 
             message = "Plan APD (PPTX → PDF) généré."
             

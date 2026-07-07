@@ -45,10 +45,10 @@ PT_CHAMBRE_TIERS = (163, 72, 182)
 PT_POTEAU_FREE_CREER = (255, 5, 1)
 PT_POTEAU_FREE_EXIST = (0, 0, 255)
 PT_POTEAU_FT = (255, 94, 1)
-# Poteau FT par nature des travaux (annexes C6/C7)
-PT_POTEAU_FT_REMPL = (255, 140, 0)
-PT_POTEAU_FT_RENF = (196, 82, 6)
-PT_POTEAU_FT_IRR = (139, 20, 12)
+# Poteau FT par nature des travaux (annexes C6/C7) — croix rouge / verte / noire (réf. ENSIO)
+PT_POTEAU_FT_REMPL = (230, 20, 20)
+PT_POTEAU_FT_RENF = (0, 140, 0)
+PT_POTEAU_FT_IRR = (0, 0, 0)
 
 # Sites
 BTS_COUL = (120, 214, 25)
@@ -162,9 +162,9 @@ _PT_STYLE = {
     "POTEAU FREE A CRÉER": ("arrow", PT_POTEAU_FREE_CREER, 4.3),
     "POTEAU FREE EXISTANT": ("arrow", PT_POTEAU_FREE_EXIST, 4.3),
     "POTEAU FT": ("arrow", PT_POTEAU_FT, 4.3),
-    "POTEAU FT REMPLACEMENT": ("arrow", PT_POTEAU_FT_REMPL, 4.3),
-    "POTEAU FT RENFORCEMENT/RECALAGE": ("arrow", PT_POTEAU_FT_RENF, 4.3),
-    "POTEAU FT IRREMPLACABLE": ("arrow", PT_POTEAU_FT_IRR, 4.3),
+    "POTEAU FT REMPLACEMENT": ("cross", PT_POTEAU_FT_REMPL, 4.0),
+    "POTEAU FT RENFORCEMENT/RECALAGE": ("cross", PT_POTEAU_FT_RENF, 4.0),
+    "POTEAU FT IRREMPLACABLE": ("cross", PT_POTEAU_FT_IRR, 4.0),
 }
 
 # Ordres canoniques pour la légende (dynamique).
@@ -450,3 +450,51 @@ def legende_dynamique(couches, natures=None):
             blocs.append(("SUPPORT", entrees))
 
     return blocs
+
+
+def legende_reference():
+    """Légende FIXE complète du gabarit ENSIO (folios), en 2 colonnes.
+
+    Renvoie ``(gauche, droite)`` — chaque colonne est une liste de
+    ``(titre, entrees)`` avec ``entrees = [(forme, couleur_rgb, libellé), ...]``.
+    Contrairement à ``legende_dynamique``, TOUTES les catégories sont affichées
+    (mêmes intitulés/ordre que le PDF de référence), qu'elles soient présentes
+    ou non dans les données. Formes : triangle, circle, ligne, ligne_pointille,
+    commune (cadre pointillé), square, arrow, cross."""
+    gauche = [
+        ("SITE", [("triangle", NRA_COUL, "NRA"),
+                  ("triangle", NRO_COUL, "NRO_RIP"),
+                  ("triangle", BTS_COUL, "BTS")]),
+        ("BPE", [("circle", BPE_A_CREER, "A CREER"),
+                 ("circle", BPE_EXISTANT, "EXISTANT")]),
+        ("CABLES", [("ligne", CABLE_COULEURS["CAD"], "CAD"),
+                    ("ligne", CABLE_COULEURS["CDD"], "CDD"),
+                    ("ligne", CABLE_COULEURS["CTR"], "CTR"),
+                    ("ligne", CABLE_COULEURS["CDI"], "CDI"),
+                    ("ligne", CABLE_COULEURS["BAG"], "BAG"),
+                    ("ligne", CABLE_COULEURS["FON"], "FON"),
+                    ("ligne", CABLE_COULEURS["CAB"], "CAB"),
+                    ("ligne", CABLE_COULEURS["CBM"], "CBM")]),
+        ("", [("commune", COMMUNE_CONTOUR, "COMMUNE")]),
+    ]
+    droite = [
+        ("PT", [("square", PT_CHAMBRE_FREE_CREER, "CHAMBRE FREE A CRÉER"),
+                ("square", PT_CHAMBRE_FREE_EXIST, "CHAMBRE FREE EXISTANTE"),
+                ("square", PT_CHAMBRE_ORANGE, "CHAMBRE ORANGE"),
+                ("square", PT_CHAMBRE_TIERS, "CHAMBRE PRIVE\nOP TIERS"),
+                ("arrow", PT_POTEAU_FREE_CREER, "POTEAU FREE A CRÉER"),
+                ("arrow", PT_POTEAU_FREE_EXIST, "POTEAU FREE EXISTANT"),
+                ("arrow", PT_POTEAU_FT, "POTEAU FT"),
+                ("cross", PT_POTEAU_FT_REMPL, "POTEAU FT REMPLACEMENT"),
+                ("cross", PT_POTEAU_FT_RENF, "POTEAU FT RENFORCEMENT\nRECALAGE"),
+                ("cross", PT_POTEAU_FT_IRR, "POTEAU FT IRREMPLACABLE")]),
+        ("SUPPORT", [("ligne", SUPPORT_COULEURS["BLO ORANGE"], "BLO ORANGE"),
+                     ("ligne_pointille", SUPPORT_COULEURS["BLO ORANGE UNITAIRE"], "BLO ORANGE UNITAIRE"),
+                     ("ligne", SUPPORT_COULEURS["AERIEN FT"], "AERIEN FT"),
+                     ("ligne", SUPPORT_COULEURS["GC FREE EXISTANT"], "GC FREE EXISTANT"),
+                     ("ligne", SUPPORT_COULEURS["GC FREE A CREER"], "GC FREE A CRÉER"),
+                     ("ligne", SUPPORT_COULEURS["AERIEN FREE"], "AERIEN FREE"),
+                     ("ligne", SUPPORT_COULEURS["GC PRIVE/OP TIERS"], "GC PRIVE\nOP TIERS"),
+                     ("ligne", SUPPORT_COULEURS["ENEDIS AERIEN"], "ENEDIS AERIEN")]),
+    ]
+    return gauche, droite
