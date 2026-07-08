@@ -15,7 +15,8 @@ neuf, passé « en service ») :
   · PT      : les PT qui INTERSECTENT un BPE existant (co-localisés) sont EXCLUS ;
               ``DATE_CREAT`` = date TVX pour les PT FREE (logique nomenclature).
   · CABLE   : ``POSE`` = date TVX ; ``FCI`` renseigné par câble (Console).
-  · SUPPORT : ``DATE_CONST`` = date TVX ; champs hors gabarit retirés.
+  · SUPPORT : ``DATE_CONST`` NON modifiée (valeur d'entrée conservée) ; champs
+              hors gabarit retirés.
   · NRO/NRA/BTS : copie conforme au schéma.
 
 La date TVX est au format **aaaammjj** (ex. ``20260407``), issue du nom du
@@ -130,8 +131,7 @@ def appliquer_champs_doe(g, nom_in, date_tvx, fci_par_cable=None,
             fci_vals = cle.map(lambda n: fci_par_cable.get(str(n)))
             g.loc[maj, "FCI"] = fci_vals[maj]
     elif nom_in == "SUPPORT":
-        if _cible("DATE_CONST") and date_tvx:
-            g.loc[maj, "DATE_CONST"] = date_tvx
+        pass  # SUPPORT : DATE_CONST NON mise à jour — on conserve la valeur d'entrée du support
     return g
 
 

@@ -484,11 +484,11 @@ def _doe_exclus_projet(projet):
 
 
 # colonnes DOE renseignées, par couche livrable (pour l'affichage Édition Livrables)
+# NB : SUPPORT.DATE_CONST n'est PAS mis à jour (on conserve la valeur d'entrée).
 _DOE_CHAMPS_LIVRABLE = {
     "BPE": ["ETAT", "DATE_DE_CR"],
     "PT": ["DATE_CREAT"],
     "CABLES": ["POSE", "FCI"],
-    "SUPPORT": ["DATE_CONST"],
 }
 
 
