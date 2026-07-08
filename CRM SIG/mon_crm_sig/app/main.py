@@ -2059,12 +2059,17 @@ def api_generer_etude(projet_id: int, type_etude: str, mode: str = "overwrite", 
                 raise HTTPException(status_code=400,
                                     detail=f"Gabarit DOE FO introuvable : {DOE_FO_TEMPLATE_DIR}")
             date_tvx, fci = _doe_fo_params(projet, dossier_input)
-            if not date_tvx and not fci:
+            # La date TVX est OBLIGATOIRE : elle renseigne DATE_DE_CR / POSE /
+            # DATE_CREAT (aaaammjj) de TOUS les objets. Sans elle, le remplissage
+            # automatique n'a pas lieu et les SHP gardent le placeholder « AAAAMMJJ »
+            # (d'où le passage forcé par le modal de nomenclature). On la rend requise.
+            if not date_tvx:
                 raise HTTPException(
                     status_code=400,
-                    detail="Aucune donnée DOE à renseigner : saisissez d'abord la "
-                           "date TVX et/ou les FCI dans la Console DOE FO (ou importez "
-                           "le fichier AAAAMMJJ-DATETVX.txt) avant de générer.")
+                    detail="Date TVX manquante : saisissez la date TVX dans la Console "
+                           "DOE FO (ou importez le fichier AAAAMMJJ-DATETVX.txt) avant de "
+                           "générer. Elle remplit automatiquement DATE_DE_CR / POSE / "
+                           "DATE_CREAT (aaaammjj) sur tous les SHP livrables.")
 
             # 1) SHP LIVRABLES (schéma NETGEO) — source de vérité. On NE force PAS
             #    l'écrasement (overwrite=False) : les livrables existants (et leurs
