@@ -480,6 +480,47 @@ def _doe_exclus_projet(projet):
     return {"BPE": [], "PT": []}
 
 
+# colonnes DOE renseignées, par couche livrable (pour l'affichage Édition Livrables)
+_DOE_CHAMPS_LIVRABLE = {
+    "BPE": ["ETAT", "DATE_DE_CR"],
+    "PT": ["DATE_CREAT"],
+    "CABLES": ["POSE", "FCI"],
+    "SUPPORT": ["DATE_CONST"],
+}
+
+
+def _maj_shp_livrables_doe(projet, date_tvx, fci, exclus):
+    """Répercute les champs DOE (dates TVX, ETAT, FCI) dans les SHP LIVRABLES
+    (source de vérité lue par l'Édition Livrables / PDS / KMZ), afin que les
+    valeurs saisies apparaissent bien sur les couches. Les lignes exclues
+    (BPE/PT existants) restent INCHANGÉES (elles s'affichent grisées).
+
+    Renvoie le nombre de couches livrables mises à jour."""
+    from app.reporting import doe_fo_generator as dfo
+    dossier = _trouver_dossier_shape(projet)
+    if not dossier or not os.path.isdir(dossier):
+        return 0
+    exclus = exclus or {}
+    n = 0
+    for base, champs_doe in _DOE_CHAMPS_LIVRABLE.items():
+        p = os.path.join(dossier, f"{base}.shp")
+        if not os.path.exists(p):
+            continue
+        try:
+            g = gis_handler.lire_shapefile(p)
+            for col in champs_doe:                     # garantir la présence des colonnes DOE
+                if col not in g.columns:
+                    g[col] = None
+            dfo.appliquer_champs_doe(
+                g, base, date_tvx, fci,
+                exclus_noms=exclus.get(base, []))
+            g.to_file(p, encoding="utf-8")
+            n += 1
+        except Exception as e:
+            logger.warning(f"MAJ livrable {base} (DOE) échouée : {e}")
+    return n
+
+
 def _type_etude_projet(projet) -> str:
     """Type d'étude du projet : « APD FO » (défaut) ou « DOE FO » (choix création)."""
     import json as _json
@@ -1973,14 +2014,22 @@ def api_generer_etude(projet_id: int, type_etude: str, mode: str = "overwrite", 
                 raise HTTPException(status_code=400,
                                     detail=f"Gabarit DOE FO introuvable : {DOE_FO_TEMPLATE_DIR}")
             date_tvx, fci = _doe_fo_params(projet, dossier_input)
+            if not date_tvx and not fci:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Aucune donnée DOE à renseigner : saisissez d'abord la "
+                           "date TVX et/ou les FCI dans la Console DOE FO (ou importez "
+                           "le fichier AAAAMMJJ-DATETVX.txt) avant de générer.")
             resume, exclus = dfo.generer_doe_netgeo(
                 dossier_input, DOE_FO_TEMPLATE_DIR, dossier_shapes,
                 date_tvx=date_tvx, fci_par_cable=fci)
             _sauver_doe_exclus(projet, exclus)   # BPE/PT existants -> grisés en Édition
+            nb_liv = _maj_shp_livrables_doe(projet, date_tvx, fci, exclus)  # répercussion livrables
             open(os.path.join(dossier_global, f"DOE_{ref_propre}_{date_str}-1.kmz"), "a").close()
             nb = sum(v.get("nb", 0) for v in resume.values())
             message = (f"DOE NETGEO généré ({nb} entités ; {len(exclus['BPE'])} BPE + "
-                       f"{len(exclus['PT'])} PT existants exclus ; date TVX {date_tvx or '—'}).")
+                       f"{len(exclus['PT'])} PT existants exclus ; date TVX {date_tvx or '—'} ; "
+                       f"{nb_liv} couche(s) livrable(s) mise(s) à jour).")
             
         else:
             raise HTTPException(status_code=400, detail="Type d'étude inconnu")

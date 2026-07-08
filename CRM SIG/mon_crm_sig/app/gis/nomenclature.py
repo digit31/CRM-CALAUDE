@@ -210,11 +210,15 @@ def proposer_couche(gdf, objet, date_str=None):
 
 
 def couche_a_completer(gdf, objet):
-    """True si la couche a au moins un NOM/CODE/LIBELLE vide (donc à compléter)."""
+    """True si la couche a AU MOINS UNE proposition de nomenclature — pas seulement
+    un NOM/LIBELLE vide, mais aussi une normalisation (MAJUSCULE/accents) ou un
+    champ par défaut à renseigner (EMPRISE, POSE, ETAT…). Aligné sur le moteur
+    ``proposer_couche`` : sans quoi une couche déjà nommée mais à normaliser
+    n'ouvrait jamais le modal de nomenclature à l'import."""
     objet = (objet or "").upper().replace("[LIVRABLE]", "").strip()
     if gdf is None or len(gdf) == 0:
         return False
-    cle = "LIBELLE" if objet == "SUPPORT" else "NOM"
-    if cle not in gdf.columns:
+    try:
+        return len(proposer_couche(gdf, objet)) > 0
+    except Exception:
         return False
-    return bool(gdf[cle].map(_vide).any())

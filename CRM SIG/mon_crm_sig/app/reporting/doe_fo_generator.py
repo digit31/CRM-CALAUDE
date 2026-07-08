@@ -67,6 +67,61 @@ def _date_tvx_depuis_txt(chemin_txt):
     return m.group(1) if m else ""
 
 
+def appliquer_champs_doe(g, nom_in, date_tvx, fci_par_cable=None,
+                         champs=None, exclus_noms=None):
+    """Applique EN PLACE les champs DOE (dates TVX, ETAT « EN SERVICE », FCI par
+    câble) sur les lignes NON exclues de ``g``. Ne filtre AUCUNE ligne — utilisable
+    aussi bien pour le livrable NETGEO (lignes déjà filtrées) que pour la
+    répercussion dans les SHP livrables (où les existants restent, grisés).
+
+    - ``champs`` : schéma cible. Si fourni, un champ n'est écrit que s'il en fait
+      partie ; sinon on teste les colonnes présentes de ``g``.
+    - ``exclus_noms`` : NOM des entités existantes (BPE/PT déjà en service) à NE
+      PAS modifier — laissées telles quelles (affichage grisé côté Édition).
+    """
+    import pandas as pd
+    fci_par_cable = fci_par_cable or {}
+    date_tvx = str(date_tvx or "").strip()
+    exclus = set(str(x) for x in (exclus_noms or []))
+
+    def _cible(col):
+        return (col in champs) if champs is not None else (col in g.columns)
+
+    if exclus and "NOM" in g.columns:
+        maj = ~g["NOM"].astype(str).isin(exclus)      # exclut les existants
+    else:
+        maj = pd.Series(True, index=g.index)          # toutes les lignes
+
+    if nom_in == "BPE":
+        if _cible("ETAT"):
+            g.loc[maj, "ETAT"] = "EN SERVICE"          # le neuf passe en service
+        if _cible("DATE_DE_CR") and date_tvx:
+            g.loc[maj, "DATE_DE_CR"] = date_tvx
+    elif nom_in == "PT":
+        if _cible("DATE_CREAT") and date_tvx:
+            prop = g["PROPRIETAI"] if "PROPRIETAI" in g.columns else None
+            if prop is not None and prop.notna().any():
+                free = prop.map(lambda v: "FREE" in str(v or "").upper())
+                g.loc[maj & free, "DATE_CREAT"] = date_tvx   # nomenclature : PT FREE
+            else:
+                g.loc[maj, "DATE_CREAT"] = date_tvx
+    elif nom_in == "CABLES":
+        if _cible("POSE") and date_tvx:
+            g.loc[maj, "POSE"] = date_tvx
+        if _cible("FCI") and fci_par_cable and ("NOM" in g.columns or "CODE" in g.columns):
+            # clé = NOM (repli sur CODE si NOM vide) — aligné sur le GET /doe-fo
+            if "NOM" in g.columns and "CODE" in g.columns:
+                cle = g["NOM"].where(g["NOM"].astype(str).str.strip() != "", g["CODE"])
+            else:
+                cle = g["NOM"] if "NOM" in g.columns else g["CODE"]
+            fci_vals = cle.map(lambda n: fci_par_cable.get(str(n)))
+            g.loc[maj, "FCI"] = fci_vals[maj]
+    elif nom_in == "SUPPORT":
+        if _cible("DATE_CONST") and date_tvx:
+            g.loc[maj, "DATE_CONST"] = date_tvx
+    return g
+
+
 def generer_doe_netgeo(dossier_input, dossier_template, dossier_sortie,
                        date_tvx="", fci_par_cable=None):
     """Génère le DOE FO NETGEO. ``dossier_sortie`` = …/DOE_NETGEO.
@@ -119,35 +174,22 @@ def generer_doe_netgeo(dossier_input, dossier_template, dossier_sortie,
 
         g = gdf_in.copy()
 
-        # ---- règles par couche ----
+        # ---- exclusions : lignes retirées du livrable NETGEO ----
         if nom_in == "BPE":
-            g = g[~g["ETAT"].map(_est_en_service)].copy()  # exclure les existants
-            g["ETAT"] = "EN SERVICE"                        # le neuf passe en service
-            if "DATE_DE_CR" in g.columns and date_tvx:
-                g["DATE_DE_CR"] = date_tvx
+            g = g[~g["ETAT"].map(_est_en_service)].copy()   # exclure les existants
         elif nom_in == "PT":
-            g = g[~g.index.isin(pt_exclus_idx)].copy()      # exclure PT des BPE existants
-            if "DATE_CREAT" in g.columns and date_tvx:
-                free = g.get("PROPRIETAI").map(lambda v: "FREE" in str(v or "").upper()) \
-                    if "PROPRIETAI" in g.columns else None
-                if free is not None:
-                    g.loc[free, "DATE_CREAT"] = date_tvx    # nomenclature : PT FREE
-                else:
-                    g["DATE_CREAT"] = date_tvx
-        elif nom_in == "CABLES":
-            if "POSE" in g.columns and date_tvx:
-                g["POSE"] = date_tvx
-            if "FCI" in g.columns and fci_par_cable:
-                g["FCI"] = g["NOM"].map(lambda n: fci_par_cable.get(str(n), None)) \
-                    if "NOM" in g.columns else g["FCI"]
-        elif nom_in == "SUPPORT":
-            if "DATE_CONST" in g.columns and date_tvx:
-                g["DATE_CONST"] = date_tvx
+            g = g[~g.index.isin(pt_exclus_idx)].copy()       # exclure PT des BPE existants
 
-        # ---- conformer au schéma cible (champs + ordre + CRS + .prj) ----
+        # ---- conformer au schéma cible AVANT d'écrire les champs ----
+        # (garantit que POSE/FCI/DATE_* existent même si l'input ne les avait pas :
+        #  sinon la règle serait sautée puis la colonne recréée vide)
         for c in champs:
             if c not in g.columns:
                 g[c] = None
+
+        # ---- règles DOE (dates TVX, ETAT « EN SERVICE », FCI) sur le schéma cible ----
+        appliquer_champs_doe(g, nom_in, date_tvx, fci_par_cable, champs=champs)
+
         g = g[champs + ["geometry"]]
         if crs_cible is not None:
             try:
