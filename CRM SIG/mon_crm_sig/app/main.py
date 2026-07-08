@@ -186,6 +186,7 @@ def page_etudes(request: Request, projet_id: int, db: Session = Depends(get_db))
         "shp_genere": shp_genere,
         "dossier_existant": dossier_existant,
         "shapes_a_maj": _shapes_a_maj(projet),
+        "type_etude": _type_etude_projet(projet),
     })
 
 
@@ -1767,6 +1768,61 @@ def api_generer_pdf(projet_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _generer_shapes_livrables(projet, db, mode="overwrite"):
+    """Génère / actualise les SHP LIVRABLES (source de vérité) depuis les inputs.
+
+    Modèle = gabarit **NETGEO** si l'étude est « DOE FO », sinon modèle **APD FO**.
+    Enregistre les couches ``[Livrable]``, enrichit le PT depuis les annexes C6/C7,
+    déverrouille les livrables. Renvoie ``(fichiers, dossier_sortie)``. Utilisé par
+    le bouton carte « Créer/Régénérer SHP » et par « Dossier NETGEO »."""
+    import geopandas as gpd
+    from app import models
+    est_doe = _type_etude_projet(projet).upper().startswith("DOE")
+    modeles = None
+    if est_doe:
+        from app.reporting import doe_fo_generator as _dfo
+        dossier_modele = DOE_FO_TEMPLATE_DIR
+        modeles = _dfo.modeles_livrables(DOE_FO_TEMPLATE_DIR)
+        if not modeles:
+            raise FileNotFoundError(
+                f"Gabarit DOE FO introuvable ou vide : {DOE_FO_TEMPLATE_DIR}. "
+                "Définissez la variable d'environnement CRM_SIG_DOE_FO_TEMPLATE.")
+    else:
+        dossier_modele = MODELE_SHAPE_DIR
+        if not os.path.isdir(dossier_modele):
+            raise FileNotFoundError(
+                f"Dossier modèle SHAPE introuvable : {dossier_modele}. "
+                "Vérifiez son emplacement ou définissez CRM_SIG_MODELE_SHAPE.")
+    dossier_input = os.path.join(projet.chemin_dossier, "01_Inputs_SHP")
+    dossier_sortie = _chemins_livrables_apd(projet)   # …/APD_FO_*/APD_HTL_*/SHAPE
+    fichiers = gis_handler.generer_livrables_shp(
+        dossier_modele, dossier_input, dossier_sortie,
+        overwrite=(mode == "overwrite"), modeles=modeles)
+
+    for nom_fichier in fichiers:
+        chemin_shp = os.path.join(dossier_sortie, nom_fichier)
+        nom_couche = f"[Livrable] {os.path.splitext(nom_fichier)[0]}"
+        couche_existante = db.query(models.CoucheSIG).filter(
+            models.CoucheSIG.projet_id == projet.id,
+            models.CoucheSIG.nom == nom_couche).first()
+        gdf = gpd.read_file(chemin_shp)
+        meta = gis_handler.extraire_metadonnees(gdf)
+        if couche_existante:
+            couche_existante.nb_entites = meta['nb_entites']
+            couche_existante.chemin_fichier = chemin_shp
+        else:
+            db.add(models.CoucheSIG(
+                nom=nom_couche, chemin_fichier=chemin_shp, projet_id=projet.id,
+                type_geometrie=meta['types_geometrie'][0] if meta['types_geometrie'] else "Inconnu",
+                nb_entites=meta['nb_entites'],
+                systeme_projection=str(meta['crs']) if meta['crs'] else "4326",
+                couleur="#ff0000"))
+    db.commit()
+    _enrichir_pt_depuis_annexes(projet, dossier_sortie)   # annexes C6/C7 -> PT
+    _effacer_shapes_a_maj(projet)                          # déverrouille les livrables
+    return fichiers, dossier_sortie
+
+
 @app.post("/api/projets/{projet_id}/generer-etude/{type_etude}")
 def api_generer_etude(projet_id: int, type_etude: str, mode: str = "overwrite", db: Session = Depends(get_db)):
     """
@@ -1919,71 +1975,7 @@ def api_generer_etude(projet_id: int, type_etude: str, mode: str = "overwrite", 
             message = "Plan Synoptique (PDF) généré depuis les SHP livrables."
             
         elif type_etude == "shape":
-            # DOE FO : les SHP livrables sont créés depuis le gabarit NETGEO
-            # (dossier référence DOE FO), pas depuis le modèle APD FO.
-            est_doe = _type_etude_projet(projet).upper().startswith("DOE")
-            modeles = None
-            if est_doe:
-                from app.reporting import doe_fo_generator as _dfo
-                dossier_modele = DOE_FO_TEMPLATE_DIR
-                modeles = _dfo.modeles_livrables(DOE_FO_TEMPLATE_DIR)
-                if not modeles:
-                    raise FileNotFoundError(
-                        f"Gabarit DOE FO introuvable ou vide : {DOE_FO_TEMPLATE_DIR}. "
-                        "Définissez la variable d'environnement CRM_SIG_DOE_FO_TEMPLATE."
-                    )
-            else:
-                dossier_modele = MODELE_SHAPE_DIR
-                if not os.path.isdir(dossier_modele):
-                    raise FileNotFoundError(
-                        f"Dossier modèle SHAPE introuvable : {dossier_modele}. "
-                        "Vérifiez son emplacement ou définissez la variable "
-                        "d'environnement CRM_SIG_MODELE_SHAPE."
-                    )
-            dossier_input = os.path.join(projet.chemin_dossier, "01_Inputs_SHP")
-            dossier_sortie = os.path.join(dossier_carto, "SHAPE")
-            fichiers = gis_handler.generer_livrables_shp(
-                dossier_modele, dossier_input, dossier_sortie,
-                overwrite=(mode == "overwrite"), modeles=modeles
-            )
-            
-            # Enregistrer les livrables générés comme de nouvelles couches dans la BDD
-            import geopandas as gpd
-            from app import models
-            for nom_fichier in fichiers:
-                chemin_shp = os.path.join(dossier_sortie, nom_fichier)
-                nom_couche = f"[Livrable] {os.path.splitext(nom_fichier)[0]}"
-                
-                # Vérifier si elle existe déjà pour l'écraser
-                couche_existante = db.query(models.CoucheSIG).filter(
-                    models.CoucheSIG.projet_id == projet.id,
-                    models.CoucheSIG.nom == nom_couche
-                ).first()
-                
-                gdf = gpd.read_file(chemin_shp)
-                meta = gis_handler.extraire_metadonnees(gdf)
-                
-                if couche_existante:
-                    couche_existante.nb_entites = meta['nb_entites']
-                    # Recaler le pointeur sur le dossier livrable courant (évite
-                    # que la carte lise un ancien dossier daté après régénération).
-                    couche_existante.chemin_fichier = chemin_shp
-                else:
-                    nouvelle_couche = models.CoucheSIG(
-                        nom=nom_couche,
-                        chemin_fichier=chemin_shp,
-                        projet_id=projet.id,
-                        type_geometrie=meta['types_geometrie'][0] if meta['types_geometrie'] else "Inconnu",
-                        nb_entites=meta['nb_entites'],
-                        systeme_projection=str(meta['crs']) if meta['crs'] else "4326",
-                        couleur="#ff0000" # Rouge pour les livrables
-                    )
-                    db.add(nouvelle_couche)
-            db.commit()
-            # Annexes C6/C7 : met à jour NOM+CODE du PT livrable (structure préservée)
-            _enrichir_pt_depuis_annexes(projet, dossier_sortie)
-            _effacer_shapes_a_maj(projet)  # Shapes à jour -> déverrouille les livrables
-
+            fichiers, dossier_sortie = _generer_shapes_livrables(projet, db, mode)
             message = f"Cartographie SHAPE générée ({len(fichiers)} fichiers)."
             
         elif type_etude == "kmz":
@@ -2032,12 +2024,10 @@ def api_generer_etude(projet_id: int, type_etude: str, mode: str = "overwrite", 
             message = "Plan de Câblage / Boîte (XLSX) généré."
 
         elif type_etude == "doe_fo_netgeo":
+            # Bouton « Dossier NETGEO (SHP/KMZ/DWG) » : point d'entrée UNIQUE de
+            # génération/MAJ des données d'une étude DOE FO.
             from app.reporting import doe_fo_generator as dfo
             import glob as _glob
-            dossier_shapes = os.path.join(dossier_netgeo, "03.3_Shapes")
-            os.makedirs(os.path.join(dossier_netgeo, "03.1_Synoptique_dwg"), exist_ok=True)
-            os.makedirs(os.path.join(dossier_netgeo, "03.2_Plan_de_boite"), exist_ok=True)
-            os.makedirs(dossier_shapes, exist_ok=True)
             dossier_input = os.path.join(projet.chemin_dossier, "01_Inputs_SHP")
             if not _glob.glob(os.path.join(dossier_input, "*.shp")):
                 raise HTTPException(status_code=400,
@@ -2052,16 +2042,44 @@ def api_generer_etude(projet_id: int, type_etude: str, mode: str = "overwrite", 
                     detail="Aucune donnée DOE à renseigner : saisissez d'abord la "
                            "date TVX et/ou les FCI dans la Console DOE FO (ou importez "
                            "le fichier AAAAMMJJ-DATETVX.txt) avant de générer.")
+
+            # 1) SHP LIVRABLES (schéma NETGEO) — source de vérité. On NE force PAS
+            #    l'écrasement (overwrite=False) : les livrables existants (et leurs
+            #    éventuelles corrections manuelles) sont conservés, les manquants créés.
+            fichiers_liv, _ = _generer_shapes_livrables(projet, db, "keep")
+
+            # 2) Livrable NETGEO (arbre 03.3_Shapes) + arborescence dossier DOE
+            dossier_shapes = os.path.join(dossier_netgeo, "03.3_Shapes")
+            os.makedirs(os.path.join(dossier_netgeo, "03.1_Synoptique_dwg"), exist_ok=True)
+            os.makedirs(os.path.join(dossier_netgeo, "03.2_Plan_de_boite"), exist_ok=True)
+            os.makedirs(dossier_shapes, exist_ok=True)
             resume, exclus = dfo.generer_doe_netgeo(
                 dossier_input, DOE_FO_TEMPLATE_DIR, dossier_shapes,
                 date_tvx=date_tvx, fci_par_cable=fci)
             _sauver_doe_exclus(projet, exclus)   # BPE/PT existants -> grisés en Édition
-            nb_liv = _maj_shp_livrables_doe(projet, date_tvx, fci, exclus)  # répercussion livrables
-            open(os.path.join(dossier_global, f"DOE_{ref_propre}_{date_str}-1.kmz"), "a").close()
+
+            # 3) Répercussion des champs DOE (dates TVX / FCI) dans les SHP livrables
+            nb_liv = _maj_shp_livrables_doe(projet, date_tvx, fci, exclus)
+
+            # 4) KMZ (réel) depuis les livrables (après répercussion des champs)
+            kmz_ok = False
+            try:
+                dossier_shape_liv = _trouver_dossier_shape(projet)
+                if dossier_shape_liv and _glob.glob(os.path.join(dossier_shape_liv, "*.shp")):
+                    dest_kmz = os.path.join(dossier_netgeo, "KMZ", f"DOE_{ref_propre}_{date_str}.kmz")
+                    os.makedirs(os.path.dirname(dest_kmz), exist_ok=True)
+                    gis_handler.generer_livrables_kmz(dossier_shape_liv, dest_kmz)
+                    kmz_ok = True
+            except Exception as e:
+                logger.warning(f"KMZ DOE FO (projet {projet.id}) : {e}")
+
             nb = sum(v.get("nb", 0) for v in resume.values())
-            message = (f"DOE NETGEO généré ({nb} entités ; {len(exclus['BPE'])} BPE + "
-                       f"{len(exclus['PT'])} PT existants exclus ; date TVX {date_tvx or '—'} ; "
-                       f"{nb_liv} couche(s) livrable(s) mise(s) à jour).")
+            message = (f"Dossier NETGEO généré : {len(fichiers_liv)} SHP livrables"
+                       + (" + KMZ" if kmz_ok else "")
+                       + f" ; {nb} entités NETGEO ({len(exclus['BPE'])} BPE + "
+                       f"{len(exclus['PT'])} PT existants exclus) ; date TVX "
+                       f"{date_tvx or '—'} ; {nb_liv} couche(s) livrable(s) à jour "
+                       f"(DWG : dossier prêt, export manuel).")
             
         else:
             raise HTTPException(status_code=400, detail="Type d'étude inconnu")
