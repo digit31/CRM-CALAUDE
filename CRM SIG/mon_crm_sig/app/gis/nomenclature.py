@@ -45,8 +45,7 @@ def _vide(v):
         return True
     if isinstance(v, float) and math.isnan(v):
         return True
-    # placeholders de gabarit (ex. DATE_CREAT = « AAAAMMJJ ») = à renseigner
-    return str(v).strip().lower() in ("", "none", "nan", "aaaammjj", "aaaa-mm-jj", "jj/mm/aaaa")
+    return str(v).strip().lower() in ("", "none", "nan")
 
 
 def _nra_du_projet(gdf):
@@ -203,8 +202,7 @@ def proposer_couche(gdf, objet, date_str=None):
                 props.append(_prop(i, "ETAT", r.get("ETAT"), "EN SERVICE", "État PT existant"))
             if "EMPRISE" in cols and _vide(r.get("EMPRISE")):
                 props.append(_prop(i, "EMPRISE", r.get("EMPRISE"), emp, "Emprise du NRA (…_001)"))
-            if "DATE_CREAT" in cols and _vide(r.get("DATE_CREAT")):
-                props.append(_prop(i, "DATE_CREAT", r.get("DATE_CREAT"), date_str, "Date de création (aaaammjj)"))
+            # PT.DATE_CREAT : NON proposée — reste le placeholder « AAAAMMJJ » côté DOE FO.
 
     logger.info(f"{len(props)} proposition(s) de nomenclature pour {objet} (NRA {nra}).")
     return props

@@ -112,8 +112,8 @@ def appliquer_champs_doe(g, nom_in, date_tvx, fci_par_cable=None,
         if _cible("DATE_DE_CR") and date_tvx:
             g.loc[maj, "DATE_DE_CR"] = date_tvx
     elif nom_in == "PT":
-        if _cible("DATE_CREAT") and date_tvx:
-            g.loc[maj, "DATE_CREAT"] = date_tvx   # DATE_CREAT (aaaammjj) pour TOUS les PT
+        if _cible("DATE_CREAT"):
+            g["DATE_CREAT"] = "AAAAMMJJ"   # PT : placeholder NETGEO conservé (JAMAIS la date TVX)
     elif nom_in == "CABLES":
         if _cible("POSE") and date_tvx:
             g.loc[maj, "POSE"] = date_tvx

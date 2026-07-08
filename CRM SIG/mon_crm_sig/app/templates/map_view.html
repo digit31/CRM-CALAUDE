@@ -1026,7 +1026,7 @@
                 // BPE/PT déjà EN SERVICE : exclus du DOE FO -> grisés + verrouillés
                 const exclusDoe = data.exclus || [];
                 const estDoe = (typeof typeEtudeCourant !== 'undefined') && typeEtudeCourant === 'DOE FO';
-                const DOE_COLS = ['FCI', 'POSE', 'DATE_DE_CR', 'DATE_CREAT'];  // remplis par le CRM (DOE FO ; SUPPORT.DATE_CONST conservé)
+                const DOE_COLS = ['FCI', 'POSE', 'DATE_DE_CR'];  // remplis par le CRM (CÂBLE/BPE ; PT.DATE_CREAT reste AAAAMMJJ, SUPPORT.DATE_CONST conservé)
                 data.lignes.forEach((ligne, idx) => {
                     const nom = (ligne['NOM'] !== null && ligne['NOM'] !== undefined) ? String(ligne['NOM']).trim() : '';
                     const estExclu = exclusDoe.indexOf(nom) !== -1;
