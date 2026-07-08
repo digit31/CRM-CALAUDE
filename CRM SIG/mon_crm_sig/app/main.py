@@ -53,6 +53,13 @@ MODELE_SHAPE_DIR = os.environ.get(
     os.path.join(_WORKSPACE_DIR, "EXEMPLE", "INPUT SHAPE APD FO"),
 )
 
+# Gabarit des 7 couches NETGEO du DOE FO (01-BPE … 07-NRO, .prj inclus) :
+# copié dans DOE_NETGEO puis rempli depuis les SHP d'entrée.
+DOE_FO_TEMPLATE_DIR = os.environ.get(
+    "CRM_SIG_DOE_FO_TEMPLATE",
+    os.path.join(_WORKSPACE_DIR, "EXEMPLE", "COUCHE TEMPLATE DOE FO"),
+)
+
 # Gabarit Excel du livrable PDS : on utilise EN PRIORITÉ le fichier de référence
 # fourni par l'utilisateur (EXEMPLE/PDS TEMPLATE A COPIER), sinon la copie embarquée.
 _PDS_EXEMPLE = os.path.join(_WORKSPACE_DIR, "EXEMPLE", "PDS TEMPLATE A COPIER", "68218_005_01_PDS.xlsx")
@@ -420,6 +427,55 @@ def _fond_opacite_projet(projet) -> float:
     except Exception:
         pass
     return 1.0
+
+
+def _doe_fo_params(projet, dossier_input):
+    """(date_tvx aaaammjj, {cable_nom: fci}) pour le DOE FO — date depuis le .txt
+    DATETVX présent dans les inputs, FCI depuis 02_Traitement/fci.json (Console)."""
+    from app.reporting import doe_fo_generator as _dfo
+    import glob as _glob, json as _json
+    date_tvx = ""
+    cands = _glob.glob(os.path.join(dossier_input, "*DATETVX*.txt")) + \
+        _glob.glob(os.path.join(projet.chemin_dossier, "**", "*DATETVX*.txt"), recursive=True)
+    for t in cands:
+        date_tvx = _dfo._date_tvx_depuis_txt(t)
+        if date_tvx:
+            break
+    fci = {}
+    pf = os.path.join(projet.chemin_dossier, "02_Traitement", "fci.json")
+    if os.path.exists(pf):
+        try:
+            with open(pf, "r", encoding="utf-8") as f:
+                fci = {str(k): v for k, v in (_json.load(f) or {}).items() if v}
+        except Exception:
+            fci = {}
+    return date_tvx, fci
+
+
+def _sauver_doe_exclus(projet, exclus):
+    """Mémorise les NOM des BPE/PT existants exclus du DOE (affichage grisé)."""
+    import json as _json
+    d = os.path.join(projet.chemin_dossier, "02_Traitement")
+    os.makedirs(d, exist_ok=True)
+    try:
+        with open(os.path.join(d, "doe_exclus.json"), "w", encoding="utf-8") as f:
+            _json.dump(exclus, f, ensure_ascii=False)
+    except Exception:
+        pass
+
+
+def _doe_exclus_projet(projet):
+    """{'BPE':[…], 'PT':[…]} des éléments exclus du DOE (pour l'Édition Livrables)."""
+    import json as _json
+    p = os.path.join(projet.chemin_dossier, "02_Traitement", "doe_exclus.json")
+    try:
+        if os.path.exists(p):
+            with open(p, "r", encoding="utf-8") as f:
+                d = _json.load(f) or {}
+                return {"BPE": list(d.get("BPE", [])), "PT": list(d.get("PT", []))}
+    except Exception:
+        pass
+    return {"BPE": [], "PT": []}
 
 
 def _folios_shp_projet(projet, dossier_shape):
@@ -1825,12 +1881,28 @@ def api_generer_etude(projet_id: int, type_etude: str, mode: str = "overwrite", 
             message = "Plan de Câblage / Boîte (XLSX) généré."
 
         elif type_etude == "doe_fo_netgeo":
+            from app.reporting import doe_fo_generator as dfo
+            import glob as _glob
             dossier_shapes = os.path.join(dossier_netgeo, "03.3_Shapes")
             os.makedirs(os.path.join(dossier_netgeo, "03.1_Synoptique_dwg"), exist_ok=True)
             os.makedirs(os.path.join(dossier_netgeo, "03.2_Plan_de_boite"), exist_ok=True)
             os.makedirs(dossier_shapes, exist_ok=True)
+            dossier_input = os.path.join(projet.chemin_dossier, "01_Inputs_SHP")
+            if not _glob.glob(os.path.join(dossier_input, "*.shp")):
+                raise HTTPException(status_code=400,
+                                    detail="Aucun SHP d'entrée : importez d'abord les couches du projet.")
+            if not os.path.isdir(DOE_FO_TEMPLATE_DIR):
+                raise HTTPException(status_code=400,
+                                    detail=f"Gabarit DOE FO introuvable : {DOE_FO_TEMPLATE_DIR}")
+            date_tvx, fci = _doe_fo_params(projet, dossier_input)
+            resume, exclus = dfo.generer_doe_netgeo(
+                dossier_input, DOE_FO_TEMPLATE_DIR, dossier_shapes,
+                date_tvx=date_tvx, fci_par_cable=fci)
+            _sauver_doe_exclus(projet, exclus)   # BPE/PT existants -> grisés en Édition
             open(os.path.join(dossier_global, f"DOE_{ref_propre}_{date_str}-1.kmz"), "a").close()
-            message = "Dossier NETGEO (SHP, DWG, KMZ) généré."
+            nb = sum(v.get("nb", 0) for v in resume.values())
+            message = (f"DOE NETGEO généré ({nb} entités ; {len(exclus['BPE'])} BPE + "
+                       f"{len(exclus['PT'])} PT existants exclus ; date TVX {date_tvx or '—'}).")
             
         else:
             raise HTTPException(status_code=400, detail="Type d'étude inconnu")
