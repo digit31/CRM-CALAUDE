@@ -53,6 +53,19 @@ def _shp_de(dossier, sous=None):
     return l[0] if l else None
 
 
+def modeles_livrables(dossier_template):
+    """Couples ``(f"{BASE}.shp", chemin_shp_gabarit)`` pour générer les SHP
+    LIVRABLES d'une étude DOE FO au schéma NETGEO, depuis le gabarit imbriqué
+    (``01-BPE`` → ``BPE.shp``, ``03-CABLE`` → ``CABLES.shp``…). À passer à
+    ``gis_handler.generer_livrables_shp(..., modeles=...)``."""
+    out = []
+    for sous, base in MAPPING:
+        p = _shp_de(dossier_template, sous)
+        if p:
+            out.append((f"{base}.shp", p))
+    return out
+
+
 def _est_en_service(v):
     return "SERVICE" in str(v or "").upper()
 

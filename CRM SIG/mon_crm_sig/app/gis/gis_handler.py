@@ -152,7 +152,7 @@ def sauvegarder_attributs(chemin_source: str, chemin_destination: str, nouvelles
     logger.info(f"Fichier modifié sauvegardé dans : {chemin_destination}")
 
 
-def generer_livrables_shp(dossier_modele: str, dossier_input: str, dossier_sortie: str, overwrite: bool = True) -> list:
+def generer_livrables_shp(dossier_modele: str, dossier_input: str, dossier_sortie: str, overwrite: bool = True, modeles=None) -> list:
     """
     Parcourt le dossier modèle (ex: EXEMPLE).
     Pour chaque .shp modèle, vérifie si un .shp du même nom existe dans dossier_input.
@@ -160,16 +160,22 @@ def generer_livrables_shp(dossier_modele: str, dossier_input: str, dossier_sorti
     Sinon, crée un .shp vide avec le schéma du modèle.
     Sauvegarde dans dossier_sortie.
     Retourne la liste des fichiers créés.
+
+    ``modeles`` (optionnel) : liste de couples ``(nom_fichier_sortie, chemin_shp_modèle)``
+    pour piloter explicitement les couches à produire — ex. DOE FO, où le gabarit
+    NETGEO est imbriqué (01-BPE/… → SHAPE/BPE.shp). Si None, on utilise le schéma
+    APD FO à plat : ``dossier_modele/*.shp``.
     """
     import glob
     fichiers_crees = []
-    
+
     os.makedirs(dossier_sortie, exist_ok=True)
-    
-    modeles = glob.glob(os.path.join(dossier_modele, "*.shp"))
-    
-    for modele_path in modeles:
-        nom_fichier = os.path.basename(modele_path)
+
+    if modeles is None:
+        modeles = [(os.path.basename(p), p)
+                   for p in glob.glob(os.path.join(dossier_modele, "*.shp"))]
+
+    for nom_fichier, modele_path in modeles:
         chemin_sortie = os.path.join(dossier_sortie, nom_fichier)
         
         # Si overwrite est False et le fichier existe déjà, on le conserve intact

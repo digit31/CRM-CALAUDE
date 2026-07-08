@@ -1902,17 +1902,32 @@ def api_generer_etude(projet_id: int, type_etude: str, mode: str = "overwrite", 
             message = "Plan Synoptique (PDF) généré depuis les SHP livrables."
             
         elif type_etude == "shape":
-            dossier_modele = MODELE_SHAPE_DIR
-            if not os.path.isdir(dossier_modele):
-                raise FileNotFoundError(
-                    f"Dossier modèle SHAPE introuvable : {dossier_modele}. "
-                    "Vérifiez son emplacement ou définissez la variable "
-                    "d'environnement CRM_SIG_MODELE_SHAPE."
-                )
+            # DOE FO : les SHP livrables sont créés depuis le gabarit NETGEO
+            # (dossier référence DOE FO), pas depuis le modèle APD FO.
+            est_doe = _type_etude_projet(projet).upper().startswith("DOE")
+            modeles = None
+            if est_doe:
+                from app.reporting import doe_fo_generator as _dfo
+                dossier_modele = DOE_FO_TEMPLATE_DIR
+                modeles = _dfo.modeles_livrables(DOE_FO_TEMPLATE_DIR)
+                if not modeles:
+                    raise FileNotFoundError(
+                        f"Gabarit DOE FO introuvable ou vide : {DOE_FO_TEMPLATE_DIR}. "
+                        "Définissez la variable d'environnement CRM_SIG_DOE_FO_TEMPLATE."
+                    )
+            else:
+                dossier_modele = MODELE_SHAPE_DIR
+                if not os.path.isdir(dossier_modele):
+                    raise FileNotFoundError(
+                        f"Dossier modèle SHAPE introuvable : {dossier_modele}. "
+                        "Vérifiez son emplacement ou définissez la variable "
+                        "d'environnement CRM_SIG_MODELE_SHAPE."
+                    )
             dossier_input = os.path.join(projet.chemin_dossier, "01_Inputs_SHP")
             dossier_sortie = os.path.join(dossier_carto, "SHAPE")
             fichiers = gis_handler.generer_livrables_shp(
-                dossier_modele, dossier_input, dossier_sortie, overwrite=(mode == "overwrite")
+                dossier_modele, dossier_input, dossier_sortie,
+                overwrite=(mode == "overwrite"), modeles=modeles
             )
             
             # Enregistrer les livrables générés comme de nouvelles couches dans la BDD
