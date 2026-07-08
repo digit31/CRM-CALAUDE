@@ -242,6 +242,7 @@ def page_console(request: Request, projet_id: int, db: Session = Depends(get_db)
     return templates.TemplateResponse("console.html", {
         "request": request,
         "projet": projet,
+        "type_etude": _type_etude_projet(projet),
     })
 
 
