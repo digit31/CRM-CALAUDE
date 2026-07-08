@@ -268,10 +268,11 @@ def _fond_carte(ax, x0, y0, x1, y1, url=None, z_cap=19, alpha=1.0):
     return True
 
 
-def _overlay_cadastre(ax, x0, y0, x1, y1, z_cap=19):
+def _overlay_cadastre(ax, x0, y0, x1, y1, z_cap=19, alpha=1.0):
     """Surimpression des PARCELLES cadastrales (PARCELLAIRE_EXPRESS, PNG
-    transparent : limites + numéros) par-dessus le fond ortho — comme le
-    livrable de référence. Posée sous le réseau (zorder 1.4)."""
+    transparent : limites orange + points orange + numéros) par-dessus le fond
+    ortho — comme le livrable de référence. Posée sous le réseau (zorder 1.4).
+    ``alpha`` : suit l'opacité du fond (le cadastre s'atténue avec l'ortho)."""
     try:
         from PIL import Image
     except ImportError:
@@ -314,8 +315,9 @@ def _overlay_cadastre(ax, x0, y0, x1, y1, z_cap=19):
     ex0, _, _, ey1 = _emprise_tuile(tx0, ty0, z)
     _, ey0, ex1, _ = _emprise_tuile(tx1, ty1, z)
     ax.imshow(np.asarray(mos), extent=(ex0, ex1, ey0, ey1),
-              origin="upper", interpolation="bilinear", zorder=1.4)
-    logger.info(f"Plan : cadastre {ok}/{nx*ny} tuiles (z{z}).")
+              origin="upper", interpolation="bilinear", zorder=1.4,
+              alpha=max(0.0, min(1.0, alpha)))
+    logger.info(f"Plan : cadastre {ok}/{nx*ny} tuiles (z{z}, opacité {alpha:.2f}).")
 
 
 def _barre_echelle(ax, x0, y0, x1, y1):
@@ -1249,7 +1251,7 @@ def _carte(ax, couches, ext, fond=True, natures=None, url=None, z_cap=19, cadast
     if fond:
         _fond_carte(ax, x0, y0, x1, y1, url=url or FOND_IGN_URL, z_cap=z_cap, alpha=alpha)
         if cadastre:
-            _overlay_cadastre(ax, x0, y0, x1, y1, z_cap=z_cap)
+            _overlay_cadastre(ax, x0, y0, x1, y1, z_cap=z_cap, alpha=alpha)
     _dessiner_couches(ax, couches, x0, y0, x1, y1, _lw, _ms, natures=natures)
 
 

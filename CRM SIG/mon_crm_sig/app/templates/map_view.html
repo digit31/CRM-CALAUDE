@@ -439,7 +439,7 @@
     const fondOSM = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
         { maxZoom: 19, attribution: '&copy; OpenStreetMap' });
     const overlayCadastre = L.tileLayer(IGN('CADASTRALPARCELS.PARCELLAIRE_EXPRESS', 'png'),
-        { maxZoom: 20, attribution: '&copy; IGN-F / Géoplateforme' });
+        { maxZoom: 20, opacity: fondOpacite, attribution: '&copy; IGN-F / Géoplateforme' });
 
     // Fond par défaut = ORTHO (comme les folios), à l'opacité enregistrée.
     let fondActif = fondOrtho.setOpacity(fondOpacite).addTo(map);
@@ -475,6 +475,7 @@
             fondOpacite = (+sl.value) / 100;
             vv.textContent = sl.value;
             fondActif.setOpacity(fondOpacite);
+            overlayCadastre.setOpacity(fondOpacite);   // le cadastre suit l'opacité du fond
         });
         sl.addEventListener('change', () => {
             clearTimeout(t);
