@@ -1257,7 +1257,9 @@ def _rose_folio(fig, x_mm, y_top_mm, taille_mm):
 def _page_ensemble(couches, folios, titre, natures=None, code_projet=""):
     fig = plt.figure(figsize=(_A3_L * MM, _A3_H * MM))
     # carte principale (quasi pleine page) : layout ensemble « Carte 1 »
-    mx, my, mw, mh = 48.219, 0.25, 371.631, 272.724
+    # mh calé pour que le BAS de la carte s'arrête au HAUT du cartouche (266.985 mm)
+    # -> évite le débordement de ~6 mm qui créait une double bordure décalée en bas.
+    mx, my, mw, mh = 48.219, 0.25, 371.631, 266.735
     ax = _ax_mm(fig, mx, my, mw, mh)
     ext = _cadrer(_emprise(couches), mw, mh)
     # Vue d'ensemble : fond Plan IGN v2 TOPO (zoom plafonné pour garder courbes +
