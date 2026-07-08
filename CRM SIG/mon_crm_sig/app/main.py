@@ -135,6 +135,7 @@ def page_carte(request: Request, projet_id: int, db: Session = Depends(get_db)):
         "couches_affichees": couches_affichees,
         "couches_etiquettes": couches_etiquettes,
         "fond_opacite": _fond_opacite_projet(projet),
+        "type_etude": _type_etude_projet(projet),
     })
 
 
@@ -824,6 +825,22 @@ def api_annexe_clear(projet_id: int, typ: str, db: Session = Depends(get_db)):
         except Exception:
             pass
     return JSONResponse({"message": f"Annexe {typ.upper()} retirée.", "supprimes": n})
+
+
+@app.post("/api/projets/{projet_id}/type-etude")
+async def api_maj_type_etude(projet_id: int, request: Request, db: Session = Depends(get_db)):
+    """Change le type d'étude d'une affaire (« APD FO » / « DOE FO ») : détermine
+    le gabarit des SHP livrables générés (NETGEO pour le DOE FO). Permet aussi de
+    typer les affaires créées avant l'ajout du choix au modal."""
+    projet = crm_service.obtenir_projet(db, projet_id)
+    if not projet:
+        raise HTTPException(status_code=404, detail="Projet non trouvé")
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    _sauver_type_etude_projet(projet, body.get("type_etude", "APD FO"))
+    return JSONResponse({"type_etude": _type_etude_projet(projet)})
 
 
 @app.get("/clients", response_class=HTMLResponse)

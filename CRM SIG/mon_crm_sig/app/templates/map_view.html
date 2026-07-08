@@ -81,6 +81,15 @@
             <span class="text-[10px] font-bold {% if not shp_genere %}text-amber-800{% else %}text-slate-500{% endif %} uppercase tracking-wider">
                 {% if not shp_genere %}Livrables Manquants{% else %}Gestion des Livrables{% endif %}
             </span>
+            <!-- Type d'étude : détermine le gabarit des SHP livrables (APD FO ou DOE FO NETGEO) -->
+            <label class="flex items-center gap-2 text-[11px] text-slate-600">
+                <span class="font-semibold whitespace-nowrap">Type</span>
+                <select id="type-etude-select" onchange="majTypeEtude(this.value)"
+                        class="flex-1 border border-slate-300 rounded-md px-2 py-1 text-[11px] bg-white focus:ring-1 focus:ring-brand-500 focus:border-brand-500">
+                    <option value="APD FO" {% if type_etude != 'DOE FO' %}selected{% endif %}>APD FO</option>
+                    <option value="DOE FO" {% if type_etude == 'DOE FO' %}selected{% endif %}>DOE FO (NETGEO)</option>
+                </select>
+            </label>
             <button onclick="creerShpDepuisIci()" id="btn-creer-shp-ici" class="w-full {% if not shp_genere %}bg-brand-600 hover:bg-brand-700{% else %}bg-slate-600 hover:bg-slate-700{% endif %} text-white font-bold py-2 px-3 rounded-lg text-xs flex items-center justify-center gap-1.5 shadow-sm transition transform active:scale-95">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                     {% if not shp_genere %}
@@ -89,8 +98,11 @@
                     <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 8H18.5" />
                     {% endif %}
                 </svg>
-                <span id="btn-shp-label">{% if not shp_genere %}Créer les SHP (Livrables){% else %}Régénérer SHP Livrables{% endif %}</span>
+                <span id="btn-shp-label">{% if not shp_genere %}Créer les SHP{% else %}Régénérer SHP{% endif %} — {% if type_etude == 'DOE FO' %}DOE FO{% else %}APD FO{% endif %}</span>
             </button>
+            <p id="type-etude-hint" class="text-[10px] leading-tight {% if type_etude == 'DOE FO' %}text-brand-600{% else %}text-slate-400{% endif %}">
+                {% if type_etude == 'DOE FO' %}Livrables au schéma <b>NETGEO</b> (POSE/FCI/dates).{% else %}Livrables au schéma <b>APD FO</b>.{% endif %}
+            </p>
         </div>
 
         <!-- Liste des couches -->
@@ -1176,8 +1188,36 @@
     }
 
     let currentShpGenere = {{ shp_genere | tojson }};
+    let typeEtudeCourant = {{ type_etude | tojson }};
 
     let livrableDirty = false;
+
+    // Type d'étude (APD FO / DOE FO) : détermine le gabarit des SHP livrables.
+    function majTypeEtude(val) {
+        fetch('/api/projets/' + projetId + '/type-etude', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type_etude: val })
+        })
+        .then(r => r.json())
+        .then(d => {
+            typeEtudeCourant = d.type_etude || val;
+            const estDoe = typeEtudeCourant === 'DOE FO';
+            const lbl = document.getElementById('btn-shp-label');
+            if (lbl) {
+                const base = currentShpGenere ? 'Régénérer SHP' : 'Créer les SHP';
+                lbl.textContent = base + ' — ' + (estDoe ? 'DOE FO' : 'APD FO');
+            }
+            const hint = document.getElementById('type-etude-hint');
+            if (hint) {
+                hint.innerHTML = estDoe
+                    ? 'Livrables au schéma <b>NETGEO</b> (POSE/FCI/dates).'
+                    : 'Livrables au schéma <b>APD FO</b>.';
+                hint.className = 'text-[10px] leading-tight ' + (estDoe ? 'text-brand-600' : 'text-slate-400');
+            }
+        })
+        .catch(err => alert('Changement de type impossible : ' + err));
+    }
 
     function creerShpDepuisIci() {
         if (livrableDirty) {
