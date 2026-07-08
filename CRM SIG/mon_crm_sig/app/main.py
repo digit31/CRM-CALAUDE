@@ -1176,6 +1176,47 @@ def api_generer_cables(projet_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _pds_livrable(db, projet, chemin_sortie, nb_fo=2, capacite_defaut=48, commentaire=None):
+    """Génère le PDS (plan de soudure Excel) depuis les SHP LIVRABLES.
+
+    Source de vérité = dossier SHAPE livrable ; repli sur les couches BDD.
+    Renvoie (chemin, nb_onglets). Lève HTTPException si la couche BPE est absente.
+    Utilisé par l'endpoint /generer-pds ET par la génération /generer-etude/pds
+    (séquence Dossier Complet), pour éviter le mock qui produisait un xlsx vide."""
+    from app.reporting import pds_generator
+    dossier_shape = _trouver_dossier_shape(projet)
+    couches = db.query(models.CoucheSIG).filter(
+        models.CoucheSIG.projet_id == projet.id).all()
+
+    def _pref(nom):
+        inp = liv = None
+        for c in couches:
+            up = (c.nom or "").upper()
+            if up == nom:
+                inp = c
+            elif up == f"[LIVRABLE] {nom}":
+                liv = c
+        return liv or inp
+
+    def _lire(nom_fichier, base):
+        p = os.path.join(dossier_shape, nom_fichier)
+        if os.path.exists(p):
+            return gis_handler.lire_shapefile(p)
+        c = _pref(base)
+        return gis_handler.lire_shapefile(c.chemin_fichier) if c else None
+
+    bpe = _lire("BPE.shp", "BPE")
+    if bpe is None or len(bpe) == 0:
+        raise HTTPException(status_code=400,
+                            detail="Couche BPE introuvable. Générez d'abord les SHP livrables (Créer SHP).")
+    cab = _lire("CABLES.shp", "CABLES")
+    bts = _lire("BTS.shp", "BTS")
+    pt = _lire("PT.shp", "PT")
+    return pds_generator.generer_pds(
+        bpe, cab, bts, pt, chemin_sortie, template_path=PDS_TEMPLATE,
+        nb_fo=nb_fo, capacite_defaut=capacite_defaut, commentaire=commentaire)
+
+
 @app.post("/api/projets/{projet_id}/generer-pds")
 async def api_generer_pds(projet_id: int, request: Request, db: Session = Depends(get_db)):
     """
@@ -1630,8 +1671,10 @@ def api_generer_etude(projet_id: int, type_etude: str, mode: str = "overwrite", 
             message = "Plan APD (PPTX → PDF) généré."
             
         elif type_etude == "pds":
-            open(os.path.join(dossier_global, f"PDS_{ref_propre}_{date_str}.xlsx"), "a").close()
-            message = "Plan de Câblage (XLSX) généré."
+            # Vrai PDS (plan de soudure) depuis les SHP livrables — plus de mock vide.
+            chemin_pds = os.path.join(dossier_global, f"PDS_{ref_propre}_{date_str}.xlsx")
+            _c, _nb = _pds_livrable(db, projet, chemin_pds)
+            message = f"Plan de Câblage PDS généré ({_nb} onglet(s))."
             
         elif type_etude == "syno":
             # Plan Synoptique (design ENSIO) généré 100 % backend depuis les

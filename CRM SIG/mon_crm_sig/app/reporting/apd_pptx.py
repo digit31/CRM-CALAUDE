@@ -177,16 +177,20 @@ def _v(row, champ):
     return "" if x is None or (isinstance(x, float) and math.isnan(x)) else str(x).strip()
 
 
-def _boites_a_creer(dossier_shape):
-    """Vignettes : BPE À CRÉER (hors EN SERVICE) + PT porteur + modèle."""
+def _boites_vignettes(dossier_shape, site="NRO"):
+    """Vignettes BPE (nom, adresse, chambre/appui, modèle).
+
+    Règle métier : site **BTS** -> uniquement les BPE **À CRÉER** (hors EN
+    SERVICE) ; site **NRO/NRA** -> **TOUTES** les BPE (existantes + à créer)."""
     bpe = _lire(dossier_shape, "BPE")
     pt = _lire(dossier_shape, "PT")
     out = []
     if bpe is None:
         return out
+    bts_only = (site == "BTS")
     for _, r in bpe.iterrows():
-        if "SERVICE" in _v(r, "ETAT").upper():
-            continue  # existantes exclues
+        if bts_only and "SERVICE" in _v(r, "ETAT").upper():
+            continue  # BTS : boîtes existantes exclues
         g = r.geometry
         ptref = ""
         if g is not None and pt is not None:
@@ -432,9 +436,11 @@ def remplir_apd(template_path, donnees, dossier_shape, sortie_pptx,
     if s4 is None and len(list(prs.slides)) >= 4:
         s4 = list(prs.slides)[-1]
     if s4 is not None:
-        boites = _boites_a_creer(dossier_shape)
+        boites = _boites_vignettes(dossier_shape, site)
         if boites:
-            _remplir_vignettes(s4, boites)
+            _remplir_vignettes(s4, boites)      # remplace les vignettes-exemple du template
+        else:
+            _supprimer_slide(prs, s4)           # aucune boîte -> pas de page vignettes-exemple
 
     os.makedirs(os.path.dirname(sortie_pptx), exist_ok=True)
     prs.save(sortie_pptx)
