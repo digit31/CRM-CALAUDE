@@ -95,7 +95,7 @@ def proposer_couche(gdf, objet, date_str=None):
     `auto=True` = correction sûre ; `auto=False` = suggestion à valider.
     """
     objet = (objet or "").upper().replace("[LIVRABLE]", "").strip()
-    date_str = date_str or datetime.utcnow().strftime("%y%m%d")
+    date_str = date_str or datetime.utcnow().strftime("%Y%m%d")   # aaaammjj (8 chiffres)
     props = []
     if gdf is None or len(gdf) == 0:
         return props

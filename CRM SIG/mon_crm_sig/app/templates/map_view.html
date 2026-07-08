@@ -778,6 +778,8 @@
                 } else if (data.cables_vides && data.peut_generer_cables) {
                     document.getElementById('modal-cables-apd').classList.remove('hidden');
                 } else {
+                    // Nomenclature vérifiée à l'import mais rien à compléter -> on notifie quand même
+                    try { sessionStorage.setItem('nomencl_ok', '1'); } catch (e) {}
                     window.location.href = data.redirect_url || ('/map/' + projetId);
                 }
             })
@@ -1023,15 +1025,24 @@
                 let bodyHtml = '';
                 // BPE/PT déjà EN SERVICE : exclus du DOE FO -> grisés + verrouillés
                 const exclusDoe = data.exclus || [];
+                const estDoe = (typeof typeEtudeCourant !== 'undefined') && typeEtudeCourant === 'DOE FO';
+                const DOE_COLS = ['FCI', 'POSE', 'DATE_DE_CR', 'DATE_CONST', 'DATE_CREAT'];  // remplis par le CRM (DOE FO)
                 data.lignes.forEach((ligne, idx) => {
                     const nom = (ligne['NOM'] !== null && ligne['NOM'] !== undefined) ? String(ligne['NOM']).trim() : '';
                     const estExclu = exclusDoe.indexOf(nom) !== -1;
                     bodyHtml += '<tr class="transition ' + (estExclu ? 'ligne-exclue bg-slate-100' : 'hover:bg-brand-50')
                         + '" data-ligne="' + idx + '"' + (estExclu ? ' data-exclu="1" title="Existant (EN SERVICE) — exclu du DOE FO, non modifiable"' : '') + '>';
                     data.colonnes.forEach(col => {
-                        let val = ligne[col];
-                        if (val === null || val === undefined) val = '<span class="text-slate-300">-</span>';
-                        bodyHtml += '<td class="px-4 py-2 ' + (estExclu ? 'text-slate-400 italic' : 'text-slate-600') + '">' + val + '</td>';
+                        const raw = ligne[col];
+                        const vide = (raw === null || raw === undefined || String(raw).trim() === '');
+                        if (vide) {
+                            bodyHtml += '<td class="px-4 py-2"><span class="text-slate-300">-</span></td>';
+                        } else if (estDoe && !estExclu && DOE_COLS.indexOf(col) !== -1) {
+                            // Attribut renseigné par le CRM (FCI / dates TVX) -> pastille verte
+                            bodyHtml += '<td class="px-4 py-2"><span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200" title="Renseigné par le CRM (DOE FO)"><span class="w-1.5 h-1.5 mr-1.5 bg-emerald-500 rounded-full"></span>' + raw + '</span></td>';
+                        } else {
+                            bodyHtml += '<td class="px-4 py-2 ' + (estExclu ? 'text-slate-400 italic' : 'text-slate-600') + '">' + raw + '</td>';
+                        }
                     });
                     if (estLivrable) {
                         if (estExclu) {
@@ -1077,12 +1088,10 @@
             cells.forEach(td => {
                 if (td.classList.contains('col-actions')) return; // colonne « Supprimer » : on n'y touche pas
                 if (td.closest('tr[data-exclu]')) return;         // ligne exclue du DOE : verrouillée
-                if(td.innerHTML.includes('<span')) {
-                    td.innerHTML = `<input type="text" class="border border-brand-300 focus:border-brand-500 outline-none rounded px-2 py-1 text-xs w-full min-w-[100px]" value="">`;
-                } else {
-                    const val = td.textContent.trim().replace(/"/g, '&quot;');
-                    td.innerHTML = `<input type="text" class="border border-brand-300 focus:border-brand-500 outline-none rounded px-2 py-1 text-xs w-full min-w-[100px]" value="${val}">`;
-                }
+                // textContent gère aussi bien le vide ('-') que la pastille verte DOE
+                const txt = td.textContent.trim();
+                const val = (txt === '-' ? '' : txt).replace(/"/g, '&quot;');
+                td.innerHTML = `<input type="text" class="border border-brand-300 focus:border-brand-500 outline-none rounded px-2 py-1 text-xs w-full min-w-[100px]" value="${val}">`;
             });
         } else {
             // Recharger pour annuler
@@ -1299,5 +1308,23 @@
             });
         }
     })();
+
+    // Notification légère (toast) en bas à droite
+    function showToast(msg, kind) {
+        const t = document.createElement('div');
+        t.className = 'fixed bottom-5 right-5 z-[9999] max-w-sm px-4 py-3 rounded-xl shadow-lg text-sm font-medium ' +
+            (kind === 'ok' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-white');
+        t.textContent = msg;
+        document.body.appendChild(t);
+        setTimeout(() => { t.style.transition = 'opacity .4s'; t.style.opacity = '0'; setTimeout(() => t.remove(), 400); }, 3800);
+    }
+
+    // Import terminé sans rien à compléter : on notifie quand même que la nomenclature a été vérifiée
+    try {
+        if (sessionStorage.getItem('nomencl_ok')) {
+            sessionStorage.removeItem('nomencl_ok');
+            showToast('Nomenclature vérifiée à l\'import : couches conformes, rien à compléter.', 'ok');
+        }
+    } catch (e) {}
 </script>
 {% endblock %}
