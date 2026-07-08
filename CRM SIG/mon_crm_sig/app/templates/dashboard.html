@@ -202,6 +202,15 @@ Tableau de Bord
                        placeholder="Ex: Raccordement Fibre ZAC Nord">
             </div>
             <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1.5">Type d'étude *</label>
+                <select name="type_etude"
+                        class="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition bg-white">
+                    <option value="APD FO" selected>APD FO — Avant-Projet Détaillé</option>
+                    <option value="DOE FO">DOE FO — Dossier des Ouvrages Exécutés (câble)</option>
+                </select>
+                <p class="text-[11px] text-slate-400 mt-1.5">Le <b>DOE FO</b> structure l'affaire pour la génération NETGEO (remplissage depuis l'input, dates TVX, FCI par câble).</p>
+            </div>
+            <div>
                 <label class="block text-sm font-semibold text-slate-700 mb-1.5">Description</label>
                 <textarea name="description" rows="3"
                           class="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition resize-none"

@@ -480,6 +480,28 @@ def _doe_exclus_projet(projet):
     return {"BPE": [], "PT": []}
 
 
+def _type_etude_projet(projet) -> str:
+    """Type d'étude du projet : « APD FO » (défaut) ou « DOE FO » (choix création)."""
+    import json as _json
+    p = os.path.join(projet.chemin_dossier, "02_Traitement", "projet.json")
+    try:
+        if os.path.exists(p):
+            with open(p, "r", encoding="utf-8") as f:
+                return str((_json.load(f) or {}).get("type_etude", "APD FO")) or "APD FO"
+    except Exception:
+        pass
+    return "APD FO"
+
+
+def _sauver_type_etude_projet(projet, type_etude):
+    import json as _json
+    t = "DOE FO" if "DOE" in str(type_etude or "").upper() else "APD FO"
+    d = os.path.join(projet.chemin_dossier, "02_Traitement")
+    os.makedirs(d, exist_ok=True)
+    with open(os.path.join(d, "projet.json"), "w", encoding="utf-8") as f:
+        _json.dump({"type_etude": t}, f, ensure_ascii=False)
+
+
 def _folios_shp_projet(projet, dossier_shape):
     """Chemin du FOLIO_LIVRABLES.shp du projet (dessiné/importé), sinon celui du
     dossier SHAPE, sinon None (déclenche l'auto-génération)."""
@@ -806,12 +828,17 @@ def api_creer_projet(
     nom: str = Form(...),
     description: str = Form(""),
     client_id: str = Form(""),
+    type_etude: str = Form("APD FO"),
     db: Session = Depends(get_db)
 ):
     """Crée un nouveau projet et redirige vers le tableau de bord."""
     try:
         cid = int(client_id) if client_id else None
-        crm_service.creer_projet(db, nom=nom, description=description, client_id=cid)
+        projet = crm_service.creer_projet(db, nom=nom, description=description, client_id=cid)
+        try:                                   # type d'étude (APD FO / DOE FO)
+            _sauver_type_etude_projet(projet, type_etude)
+        except Exception:
+            pass
         return RedirectResponse(url="/", status_code=303)
     except Exception as e:
         logger.error(f"Erreur API creer_projet: {str(e)}")
@@ -1622,11 +1649,17 @@ def api_obtenir_attributs(projet_id: int, couche_id: int, db: Session = Depends(
         gdf = gis_handler.lire_shapefile(chemin)
         table = gis_handler.obtenir_table_attributaire(gdf)
         colonnes = [col for col in gdf.columns.tolist() if col != 'geometry']
+        # BPE/PT existants exclus du DOE FO -> à griser/verrouiller dans l'Édition
+        exclus = []
+        base = (couche.nom or "").upper().replace("[LIVRABLE]", "").strip()
+        if base in ("BPE", "PT") and projet:
+            exclus = _doe_exclus_projet(projet).get(base, [])
         return JSONResponse(content={
             "nom_couche": couche.nom,
             "colonnes": colonnes,
             "lignes": table,
-            "nb_total": len(table)
+            "nb_total": len(table),
+            "exclus": exclus,
         })
     except Exception as e:
         logger.error(f"Erreur attributs couche #{couche_id}: {str(e)}")
