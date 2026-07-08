@@ -166,6 +166,27 @@
       </div>
     </section>
 
+    <!-- DOE FO : Date TVX + FCI par câble -->
+    <section class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+      <div class="px-5 py-3 bg-slate-50/80 border-b border-slate-100 font-semibold text-slate-700 text-sm flex items-center justify-between">
+        <span>DOE FO — Date TVX &amp; FCI par câble</span>
+        <button onclick="enregistrerDoeFo()" class="px-3 py-1.5 text-xs font-semibold bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition">Enregistrer DOE FO</button>
+      </div>
+      <div class="p-5 space-y-4">
+        <div class="max-w-xs">
+          <label class="lbl">Date TVX (aaaammjj)</label>
+          <input id="doe-date" class="inp font-mono" placeholder="20260407" maxlength="8">
+          <p class="text-[11px] text-slate-400 mt-1">Auto-détectée depuis le fichier <b>…DATETVX.txt</b> ; éditable. Remplit DATE_DE_CR / DATE_CONST / POSE (et PT via nomenclature).</p>
+        </div>
+        <div>
+          <label class="lbl">FCI — cocher les câbles concernés</label>
+          <div id="fci-list" class="grid grid-cols-1 md:grid-cols-2 gap-1 text-sm text-slate-600">
+            <span class="text-slate-400 text-xs">Chargement des câbles…</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
   </div>
 </div>
 {% endblock %}
@@ -292,6 +313,41 @@
     .finally(() => { btn.disabled = false; btn.innerHTML = t; });
   }
 
+  // ===== DOE FO : Date TVX + FCI par câble =====
+  function chargerDoeFo() {
+    fetch('/api/projets/' + projetId + '/doe-fo')
+      .then(r => r.json())
+      .then(d => {
+        const di = document.getElementById('doe-date');
+        if (di) di.value = d.date_tvx || '';
+        const box = document.getElementById('fci-list');
+        if (!box) return;
+        if (!d.cables || !d.cables.length) {
+          box.innerHTML = '<span class="text-slate-400 text-xs">Aucun câble dans l\'input (importez d\'abord les couches).</span>';
+          return;
+        }
+        box.innerHTML = d.cables.map(c =>
+          '<label class="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-50 cursor-pointer">'
+          + '<input type="checkbox" class="fci-cb accent-brand-600" data-nom="' + c.nom + '"' + (c.fci ? ' checked' : '') + '>'
+          + '<span class="font-mono text-xs">' + c.nom + '</span></label>').join('');
+      })
+      .catch(() => {});
+  }
+
+  function enregistrerDoeFo() {
+    const date_tvx = (document.getElementById('doe-date').value || '').replace(/\D/g, '').slice(0, 8);
+    const fci = {};
+    document.querySelectorAll('.fci-cb').forEach(cb => { if (cb.checked) fci[cb.dataset.nom] = true; });
+    fetch('/api/projets/' + projetId + '/doe-fo', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date_tvx, fci })
+    })
+      .then(r => r.json().then(d => ({ ok: r.ok, d })))
+      .then(({ ok, d }) => toast(ok ? ('DOE FO enregistré — ' + (d.nb_fci || 0) + ' câble(s) FCI.') : (d.detail || 'Erreur'), ok ? 'ok' : 'error'))
+      .catch(() => toast('Erreur enregistrement DOE FO', 'error'));
+  }
+
   charger(false);
+  chargerDoeFo();
 </script>
 {% endblock %}

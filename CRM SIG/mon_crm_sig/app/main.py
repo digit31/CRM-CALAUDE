@@ -430,25 +430,27 @@ def _fond_opacite_projet(projet) -> float:
 
 
 def _doe_fo_params(projet, dossier_input):
-    """(date_tvx aaaammjj, {cable_nom: fci}) pour le DOE FO — date depuis le .txt
-    DATETVX présent dans les inputs, FCI depuis 02_Traitement/fci.json (Console)."""
+    """(date_tvx aaaammjj, {cable_nom: fci}) pour le DOE FO. Priorité à la saisie
+    Console (02_Traitement/doe.json) ; à défaut, date depuis le nom du .txt DATETVX."""
     from app.reporting import doe_fo_generator as _dfo
     import glob as _glob, json as _json
-    date_tvx = ""
-    cands = _glob.glob(os.path.join(dossier_input, "*DATETVX*.txt")) + \
-        _glob.glob(os.path.join(projet.chemin_dossier, "**", "*DATETVX*.txt"), recursive=True)
-    for t in cands:
-        date_tvx = _dfo._date_tvx_depuis_txt(t)
-        if date_tvx:
-            break
-    fci = {}
-    pf = os.path.join(projet.chemin_dossier, "02_Traitement", "fci.json")
-    if os.path.exists(pf):
+    date_tvx, fci = "", {}
+    p = os.path.join(projet.chemin_dossier, "02_Traitement", "doe.json")
+    if os.path.exists(p):
         try:
-            with open(pf, "r", encoding="utf-8") as f:
-                fci = {str(k): v for k, v in (_json.load(f) or {}).items() if v}
+            with open(p, "r", encoding="utf-8") as f:
+                d = _json.load(f) or {}
+            date_tvx = str(d.get("date_tvx", "") or "").strip()
+            fci = {str(k): v for k, v in (d.get("fci") or {}).items() if v}
         except Exception:
-            fci = {}
+            pass
+    if not date_tvx:                       # repli : date depuis le fichier DATETVX
+        for t in (_glob.glob(os.path.join(dossier_input, "*DATETVX*.txt")) +
+                  _glob.glob(os.path.join(projet.chemin_dossier, "**", "*DATETVX*.txt"),
+                             recursive=True)):
+            date_tvx = _dfo._date_tvx_depuis_txt(t)
+            if date_tvx:
+                break
     return date_tvx, fci
 
 
@@ -590,6 +592,49 @@ async def api_fond_opacite(projet_id: int, request: Request, db: Session = Depen
     with open(os.path.join(d, "fond.json"), "w", encoding="utf-8") as f:
         _json.dump({"opacite": op}, f)
     return JSONResponse({"message": "Opacité du fond enregistrée.", "opacite": op})
+
+
+@app.get("/api/projets/{projet_id}/doe-fo")
+def api_doe_fo_get(projet_id: int, db: Session = Depends(get_db)):
+    """Paramètres DOE FO : date TVX + liste des câbles de l'input avec leur FCI."""
+    projet = crm_service.obtenir_projet(db, projet_id)
+    if not projet:
+        raise HTTPException(status_code=404, detail="Projet non trouvé")
+    dossier_input = os.path.join(projet.chemin_dossier, "01_Inputs_SHP")
+    date_tvx, fci = _doe_fo_params(projet, dossier_input)
+    cables = []
+    p = os.path.join(dossier_input, "CABLES.shp")
+    if os.path.exists(p):
+        try:
+            g = gis_handler.lire_shapefile(p)
+            for _, r in g.iterrows():
+                nom = str(r.get("NOM") or r.get("CODE") or "").strip()
+                if nom and not any(c["nom"] == nom for c in cables):
+                    cables.append({"nom": nom, "fci": bool(fci.get(nom))})
+        except Exception:
+            pass
+    return JSONResponse({"date_tvx": date_tvx, "cables": cables})
+
+
+@app.post("/api/projets/{projet_id}/doe-fo")
+async def api_doe_fo_save(projet_id: int, request: Request, db: Session = Depends(get_db)):
+    """Enregistre les paramètres DOE FO (date TVX aaaammjj + FCI par câble) -> doe.json."""
+    projet = crm_service.obtenir_projet(db, projet_id)
+    if not projet:
+        raise HTTPException(status_code=404, detail="Projet non trouvé")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Corps JSON invalide.")
+    date_tvx = "".join(ch for ch in str(body.get("date_tvx", "")) if ch.isdigit())[:8]
+    fci = {str(k): "OUI" for k, v in (body.get("fci") or {}).items() if v}
+    d = os.path.join(projet.chemin_dossier, "02_Traitement")
+    os.makedirs(d, exist_ok=True)
+    import json as _json
+    with open(os.path.join(d, "doe.json"), "w", encoding="utf-8") as f:
+        _json.dump({"date_tvx": date_tvx, "fci": fci}, f, ensure_ascii=False)
+    return JSONResponse({"message": "Paramètres DOE FO enregistrés.",
+                         "date_tvx": date_tvx, "nb_fci": len(fci)})
 
 
 def _enrichir_pt_depuis_annexes(projet, dossier_shape):
