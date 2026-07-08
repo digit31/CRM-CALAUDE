@@ -88,6 +88,21 @@ def _point(geom):
     return geom if geom.geom_type == "Point" else geom.centroid
 
 
+def _coords_ligne(g):
+    """Liste plate des coordonnées d'une ligne — gère LineString ET
+    MultiLineString (``.coords`` échoue sur les géométries multi-parties :
+    « Sub-geometries may have coordinate sequences, but multi-part geometries
+    do not »). c[0] / c[-1] restent les extrémités globales de la ligne."""
+    if g is None:
+        return []
+    if getattr(g, "geom_type", "") == "MultiLineString":
+        out = []
+        for part in g.geoms:
+            out.extend(part.coords)
+        return out
+    return list(g.coords)
+
+
 def _capacite_map(cables_gdf, defaut):
     """Dictionnaire nom_cable -> capacité (FO), avec repli sur `defaut`."""
     m = {}
@@ -150,7 +165,7 @@ def _ordonner_boites(bpe_gdf, cables_gdf, bts_gdf, tol=3.0, plafond=100.0):
         noeuds.append([pt, {nom: geom}])
 
     for nom, g in cables:
-        c = list(g.coords)
+        c = _coords_ligne(g)
         _ajouter_extremite(Point(c[0][:2]), nom, g)
         _ajouter_extremite(Point(c[-1][:2]), nom, g)
 
@@ -164,7 +179,7 @@ def _ordonner_boites(bpe_gdf, cables_gdf, bts_gdf, tol=3.0, plafond=100.0):
         # 1) câbles incidents (extrémité <= tol de la BPE)
         incident = {}
         for nom, g in cables:
-            c = list(g.coords)
+            c = _coords_ligne(g)
             if min(Point(c[0][:2]).distance(bp), Point(c[-1][:2]).distance(bp)) <= tol:
                 incident.setdefault(nom, g)
 
