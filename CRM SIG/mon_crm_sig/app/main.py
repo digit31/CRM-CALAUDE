@@ -514,9 +514,11 @@ def _maj_shp_livrables_doe(projet, date_tvx, fci, exclus):
             for col in champs_doe:                     # garantir la présence des colonnes DOE
                 if col not in g.columns:
                     g[col] = None
-            dfo.appliquer_champs_doe(
-                g, base, date_tvx, fci,
-                exclus_noms=exclus.get(base, []))
+            # PT : DATE_CREAT (aaaammjj) pour TOUS les PT, y compris l'existant
+            # co-localisé (on écrase le placeholder « AAAAMMJJ ») ; BPE : les
+            # existants gardent leur DATE_DE_CR (exclusion conservée).
+            exclus_base = [] if base == "PT" else exclus.get(base, [])
+            dfo.appliquer_champs_doe(g, base, date_tvx, fci, exclus_noms=exclus_base)
             g.to_file(p, encoding="utf-8")
             n += 1
         except Exception as e:

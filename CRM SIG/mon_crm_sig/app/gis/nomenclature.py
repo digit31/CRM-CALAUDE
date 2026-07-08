@@ -45,7 +45,8 @@ def _vide(v):
         return True
     if isinstance(v, float) and math.isnan(v):
         return True
-    return str(v).strip().lower() in ("", "none", "nan")
+    # placeholders de gabarit (ex. DATE_CREAT = « AAAAMMJJ ») = à renseigner
+    return str(v).strip().lower() in ("", "none", "nan", "aaaammjj", "aaaa-mm-jj", "jj/mm/aaaa")
 
 
 def _nra_du_projet(gdf):
