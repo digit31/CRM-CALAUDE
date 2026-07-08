@@ -275,6 +275,24 @@ def calculer_synthese(dossier_shape: str, ref_projet: str = "", date_str: str = 
     if not commune and com is not None and len(com):
         commune = _val(com.iloc[0], "NOM")
 
+    # Adresse ALIGNÉE sur les folios (SHP livrable = source de vérité) : 1re ADRESSE
+    # non vide dans l'ordre BTS -> NRA -> NRO_RIP -> BPE -> PT — identique à
+    # plan_generator._titre_lieu, pour un libellé d'adresse cohérent partout
+    # (page 1 / synthèse == folios).
+    for g in (bts, nra, nro, bpe, pt):
+        if g is None or not len(g):
+            continue
+        trouve = False
+        for _, r in g.iterrows():
+            a = _val(r, "ADRESSE")
+            if a:
+                adresse = a
+                cp = cp or _val(r, "CP") or _val(r, "CODE_POSTA")
+                trouve = True
+                break
+        if trouve:
+            break
+
     if site == "NRO" and pt is not None:
         for _, r in pt.iterrows():
             if "L5T" in _up(r, "REF_CHAMBR") or "L5T" in _up(r, "MODELE"):
