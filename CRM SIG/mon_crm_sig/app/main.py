@@ -676,7 +676,7 @@ def api_doe_fo_get(projet_id: int, db: Session = Depends(get_db)):
             for _, r in g.iterrows():
                 nom = str(r.get("NOM") or r.get("CODE") or "").strip()
                 if nom and not any(c["nom"] == nom for c in cables):
-                    cables.append({"nom": nom, "fci": bool(fci.get(nom))})
+                    cables.append({"nom": nom, "fci": str(fci.get(nom) or "")})
         except Exception:
             pass
     return JSONResponse({"date_tvx": date_tvx, "cables": cables})
@@ -693,7 +693,8 @@ async def api_doe_fo_save(projet_id: int, request: Request, db: Session = Depend
     except Exception:
         raise HTTPException(status_code=400, detail="Corps JSON invalide.")
     date_tvx = "".join(ch for ch in str(body.get("date_tvx", "")) if ch.isdigit())[:8]
-    fci = {str(k): "OUI" for k, v in (body.get("fci") or {}).items() if v}
+    # FCI = numéro par câble (valeur libre) ; on ne garde que les câbles renseignés
+    fci = {str(k): str(v).strip() for k, v in (body.get("fci") or {}).items() if str(v).strip()}
     d = os.path.join(projet.chemin_dossier, "02_Traitement")
     os.makedirs(d, exist_ok=True)
     import json as _json

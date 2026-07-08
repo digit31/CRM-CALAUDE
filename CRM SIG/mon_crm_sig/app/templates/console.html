@@ -187,12 +187,19 @@
           <input id="doe-date" class="inp font-mono" placeholder="20260407" maxlength="8">
           <p class="text-[11px] text-slate-400 mt-1">Auto-détectée depuis le fichier <b>…DATETVX.txt</b> ; éditable. Remplit DATE_DE_CR / DATE_CONST / POSE (PT via nomenclature).</p>
         </div>
-        <!-- Champ 2 : FCI par câble (seul) -->
+        <!-- Champ 2 : FCI par câble (numéro à saisir), ou un seul pour tous -->
         <div class="pt-4">
-          <label class="lbl">FCI — cocher les câbles concernés</label>
-          <div id="fci-list" class="grid grid-cols-1 md:grid-cols-2 gap-1 text-sm text-slate-600">
+          <label class="lbl">FCI — numéro par câble</label>
+          <div class="flex items-end gap-2 mb-3">
+            <div class="flex-1 max-w-xs">
+              <input id="fci-tous" class="inp font-mono" placeholder="N° FCI unique (tous les câbles)">
+            </div>
+            <button type="button" onclick="appliquerFciTous()" class="px-3 py-2 text-xs font-semibold bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition whitespace-nowrap">Appliquer à tous</button>
+          </div>
+          <div id="fci-list" class="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-slate-600">
             <span class="text-slate-400 text-xs">Chargement des câbles…</span>
           </div>
+          <p class="text-[11px] text-slate-400 mt-2">Renseigne la colonne <b>FCI</b> du câble livrable (DOE FO) : un numéro par câble, ou un seul via « Appliquer à tous ».</p>
         </div>
       </div>
       {% else %}
@@ -214,6 +221,8 @@
   .lbl { display:block; font-size:11px; font-weight:600; color:#475569; margin-bottom:4px; }
   .inp { width:100%; border:1px solid #cbd5e1; border-radius:8px; padding:8px 10px; font-size:13px; outline:none; transition:border-color .15s; }
   .inp:focus { border-color:#0d9488; }
+  .fci-inp { width:9rem; border:1px solid #cbd5e1; border-radius:6px; padding:4px 8px; font-size:12px; font-family:ui-monospace,monospace; outline:none; transition:border-color .15s; }
+  .fci-inp:focus { border-color:#0d9488; }
   .auto { display:inline-block; font-size:9px; font-weight:700; color:#0d9488; background:#f0fdfa; border:1px solid #99f6e4; border-radius:6px; padding:0 4px; margin-left:4px; }
 </style>
 <script>
@@ -345,17 +354,23 @@
           return;
         }
         box.innerHTML = d.cables.map(c =>
-          '<label class="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-50 cursor-pointer">'
-          + '<input type="checkbox" class="fci-cb accent-brand-600" data-nom="' + c.nom + '"' + (c.fci ? ' checked' : '') + '>'
-          + '<span class="font-mono text-xs">' + c.nom + '</span></label>').join('');
+          '<label class="flex items-center gap-2 px-1 py-1">'
+          + '<span class="font-mono text-xs flex-1 truncate" title="' + c.nom + '">' + c.nom + '</span>'
+          + '<input type="text" class="fci-inp" data-nom="' + c.nom + '" value="' + (c.fci || '') + '" placeholder="N° FCI"></label>').join('');
       })
       .catch(() => {});
+  }
+
+  // Recopie le FCI unique dans le champ de chaque câble
+  function appliquerFciTous() {
+    const v = (document.getElementById('fci-tous').value || '').trim();
+    document.querySelectorAll('.fci-inp').forEach(inp => { inp.value = v; });
   }
 
   function enregistrerDoeFo() {
     const date_tvx = (document.getElementById('doe-date').value || '').replace(/\D/g, '').slice(0, 8);
     const fci = {};
-    document.querySelectorAll('.fci-cb').forEach(cb => { if (cb.checked) fci[cb.dataset.nom] = true; });
+    document.querySelectorAll('.fci-inp').forEach(inp => { const v = (inp.value || '').trim(); if (v) fci[inp.dataset.nom] = v; });
     fetch('/api/projets/' + projetId + '/doe-fo', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ date_tvx, fci })
