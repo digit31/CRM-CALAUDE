@@ -127,6 +127,7 @@ def page_carte(request: Request, projet_id: int, db: Session = Depends(get_db)):
         "shp_genere": shp_genere,
         "couches_affichees": couches_affichees,
         "couches_etiquettes": couches_etiquettes,
+        "fond_opacite": _fond_opacite_projet(projet),
     })
 
 
@@ -406,6 +407,21 @@ def _dossier_folios(projet):
     return d
 
 
+def _fond_opacite_projet(projet) -> float:
+    """Opacité (0.15–1.0) du fond de carte des folios, réglée depuis la carte
+    interactive du CRM. Défaut 1.0 (fond plein)."""
+    p = os.path.join(projet.chemin_dossier, "02_Traitement", "fond.json")
+    try:
+        if os.path.exists(p):
+            import json as _json
+            with open(p, "r", encoding="utf-8") as f:
+                v = float((_json.load(f) or {}).get("opacite", 1.0))
+                return max(0.15, min(1.0, v))
+    except Exception:
+        pass
+    return 1.0
+
+
 def _folios_shp_projet(projet, dossier_shape):
     """Chemin du FOLIO_LIVRABLES.shp du projet (dessiné/importé), sinon celui du
     dossier SHAPE, sinon None (déclenche l'auto-génération)."""
@@ -498,6 +514,26 @@ async def api_folios_save(projet_id: int, request: Request, db: Session = Depend
         logger.error(f"Enregistrement folios projet {projet_id} : {e}")
         raise HTTPException(status_code=500, detail=str(e))
     return JSONResponse({"message": f"{len(geoms)} folio(s) enregistré(s).", "nb": len(geoms)})
+
+
+@app.post("/api/projets/{projet_id}/fond-opacite")
+async def api_fond_opacite(projet_id: int, request: Request, db: Session = Depends(get_db)):
+    """Enregistre l'opacité du fond de carte des folios (valeur utilisée à la
+    génération) — réglée via le slider de la carte interactive du CRM."""
+    projet = crm_service.obtenir_projet(db, projet_id)
+    if not projet:
+        raise HTTPException(status_code=404, detail="Projet non trouvé")
+    try:
+        body = await request.json()
+        op = max(0.15, min(1.0, float(body.get("opacite", 1.0))))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Valeur d'opacité invalide.")
+    d = os.path.join(projet.chemin_dossier, "02_Traitement")
+    os.makedirs(d, exist_ok=True)
+    import json as _json
+    with open(os.path.join(d, "fond.json"), "w", encoding="utf-8") as f:
+        _json.dump({"opacite": op}, f)
+    return JSONResponse({"message": "Opacité du fond enregistrée.", "opacite": op})
 
 
 def _enrichir_pt_depuis_annexes(projet, dossier_shape):
@@ -1649,7 +1685,8 @@ def api_generer_etude(projet_id: int, type_etude: str, mode: str = "overwrite", 
                     or (projet.reference or "")
                 plan_generator.generer_folios_apd(dossier_shape, chemin_folios,
                                                   folios_shp=folios_shp, natures=natures,
-                                                  code_projet=code_projet)
+                                                  code_projet=code_projet,
+                                                  opacite=_fond_opacite_projet(projet))
                 if os.path.exists(chemin_folios):
                     import fitz as _fitz
                     doc = _fitz.open(chemin_pdf)

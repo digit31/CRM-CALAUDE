@@ -425,12 +425,67 @@
 <script>
     // ===== INITIALISATION DE LA CARTE =====
     const map = L.map('map').setView([46.603354, 1.888334], 6);
-    
-    // Fond de carte OpenStreetMap
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-    }).addTo(map);
+
+    // ===== FONDS DE CARTE (IGN + OSM) + opacité « folios » =====
+    // La valeur du slider = opacité du fond ORTHO utilisée à la GÉNÉRATION des folios.
+    let fondOpacite = {{ fond_opacite | default(1.0) }};
+    const IGN = (layer, fmt) => 'https://data.geopf.fr/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile'
+        + '&LAYER=' + layer + '&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}'
+        + '&STYLE=normal&FORMAT=image/' + fmt;
+    const fondOrtho = L.tileLayer(IGN('ORTHOIMAGERY.ORTHOPHOTOS', 'jpeg'),
+        { maxZoom: 20, attribution: '&copy; IGN-F / Géoplateforme' });
+    const fondPlanIGN = L.tileLayer(IGN('GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2', 'png'),
+        { maxZoom: 19, attribution: '&copy; IGN-F / Géoplateforme' });
+    const fondOSM = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        { maxZoom: 19, attribution: '&copy; OpenStreetMap' });
+    const overlayCadastre = L.tileLayer(IGN('CADASTRALPARCELS.PARCELLAIRE_EXPRESS', 'png'),
+        { maxZoom: 20, attribution: '&copy; IGN-F / Géoplateforme' });
+
+    // Fond par défaut = ORTHO (comme les folios), à l'opacité enregistrée.
+    let fondActif = fondOrtho.setOpacity(fondOpacite).addTo(map);
+    L.control.layers(
+        { 'Ortho (folios)': fondOrtho, 'Plan IGN': fondPlanIGN, 'OpenStreetMap': fondOSM },
+        { 'Cadastre (parcelles)': overlayCadastre },
+        { position: 'topleft', collapsed: true }
+    ).addTo(map);
+    map.on('baselayerchange', e => { fondActif = e.layer; fondActif.setOpacity(fondOpacite); });
+
+    // Contrôle slider d'opacité (bas-gauche)
+    const CtrlOpacite = L.Control.extend({
+        options: { position: 'bottomleft' },
+        onAdd: function () {
+            const d = L.DomUtil.create('div', 'leaflet-bar');
+            d.style.cssText = 'background:#fff;padding:6px 9px;font:11px system-ui,sans-serif;line-height:1.3;';
+            d.innerHTML = '<label style="font-weight:600;display:block;margin-bottom:3px;">'
+                + 'Opacité fond (folios) : <span id="opac-val">' + Math.round(fondOpacite * 100) + '</span>%</label>'
+                + '<input id="opac-slider" type="range" min="15" max="100" step="5" value="'
+                + Math.round(fondOpacite * 100) + '" style="width:160px;vertical-align:middle;">';
+            L.DomEvent.disableClickPropagation(d);
+            L.DomEvent.disableScrollPropagation(d);
+            return d;
+        }
+    });
+    map.addControl(new CtrlOpacite());
+    (function () {
+        const sl = document.getElementById('opac-slider');
+        const vv = document.getElementById('opac-val');
+        if (!sl) return;
+        let t = null;
+        sl.addEventListener('input', () => {
+            fondOpacite = (+sl.value) / 100;
+            vv.textContent = sl.value;
+            fondActif.setOpacity(fondOpacite);
+        });
+        sl.addEventListener('change', () => {
+            clearTimeout(t);
+            t = setTimeout(() => {
+                fetch('/api/projets/' + {{ projet.id }} + '/fond-opacite', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ opacite: (+sl.value) / 100 })
+                }).catch(() => {});
+            }, 250);
+        });
+    })();
     
     // Stockage des couches chargées (clé = couche_id, valeur = L.geoJSON layer)
     const loadedLayers = {};

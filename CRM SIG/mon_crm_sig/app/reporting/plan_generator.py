@@ -201,7 +201,7 @@ def _emprise_tuile(tx, ty, z):
     return x0, y0, x1, y1
 
 
-def _fond_carte(ax, x0, y0, x1, y1, url=None, z_cap=19):
+def _fond_carte(ax, x0, y0, x1, y1, url=None, z_cap=19, alpha=1.0):
     """Mosaïque de tuiles XYZ sous l'emprise (EPSG:3857). Repli silencieux hors-ligne.
 
     ``z_cap`` plafonne le niveau de zoom : le Plan IGN v2 change de cartographie
@@ -262,8 +262,9 @@ def _fond_carte(ax, x0, y0, x1, y1, url=None, z_cap=19):
     ex0, _, _, ey1 = _emprise_tuile(tx0, ty0, z)
     _, ey0, ex1, _ = _emprise_tuile(tx1, ty1, z)
     ax.imshow(np.asarray(mosaique), extent=(ex0, ex1, ey0, ey1),
-              origin="upper", interpolation="bilinear", zorder=0)
-    logger.info(f"Plan : fond de carte {ok}/{nx*ny} tuiles (z{z}).")
+              origin="upper", interpolation="bilinear", zorder=0,
+              alpha=max(0.0, min(1.0, alpha)))
+    logger.info(f"Plan : fond de carte {ok}/{nx*ny} tuiles (z{z}, opacité {alpha:.2f}).")
     return True
 
 
@@ -1237,7 +1238,8 @@ def _folios_corridor(couches, cible_m=320.0, max_folios=12):
     return folios or _folios_auto(couches, max_folios)
 
 
-def _carte(ax, couches, ext, fond=True, natures=None, url=None, z_cap=19, cadastre=False):
+def _carte(ax, couches, ext, fond=True, natures=None, url=None, z_cap=19, cadastre=False,
+           alpha=1.0):
     x0, y0, x1, y1 = ext
     ax.set_xticks([]); ax.set_yticks([])
     for c in ax.spines.values():
@@ -1245,7 +1247,7 @@ def _carte(ax, couches, ext, fond=True, natures=None, url=None, z_cap=19, cadast
     ax.set_xlim(x0, x1); ax.set_ylim(y0, y1)
     ax.set_aspect("equal", adjustable="box")
     if fond:
-        _fond_carte(ax, x0, y0, x1, y1, url=url or FOND_IGN_URL, z_cap=z_cap)
+        _fond_carte(ax, x0, y0, x1, y1, url=url or FOND_IGN_URL, z_cap=z_cap, alpha=alpha)
         if cadastre:
             _overlay_cadastre(ax, x0, y0, x1, y1, z_cap=z_cap)
     _dessiner_couches(ax, couches, x0, y0, x1, y1, _lw, _ms, natures=natures)
@@ -1359,7 +1361,7 @@ def _page_ensemble(couches, folios, titre, natures=None, code_projet=""):
 
 
 def _page_folio(couches, folios, ext_folio, num, total, emprise_glob, titre, natures=None,
-                code_projet=""):
+                code_projet="", opacite=1.0):
     fig = plt.figure(figsize=(_A3_L * MM, _A3_H * MM))
     # carte principale (droite) : layout FOLIO « Carte 1 »
     mx, my, mw, mh = 120.005, 0.3, 299.995, 266.535
@@ -1367,8 +1369,9 @@ def _page_folio(couches, folios, ext_folio, num, total, emprise_glob, titre, nat
     ext = _cadrer(ext_folio, mw, mh)
     # Folio de détail : fond ORTHOPHOTO + surimpression CADASTRE (parcelles + n°),
     # comme le livrable de référence. z18 = ~0.6 m/px (net à l'impression).
+    # ``opacite`` : opacité du fond ortho (paramétrable depuis la carte du CRM).
     _carte(ax, couches, ext, fond=True, natures=natures, url=FOND_ORTHO_URL,
-           z_cap=18, cadastre=True)
+           z_cap=18, cadastre=True, alpha=opacite)
     # colonne gauche : légende de référence 2 COLONNES (haut) + rose + localisation
     _legende_gauche(fig, couches, 1.0, 1.0, 115.0, 130.0, natures=natures, colonnes=2)
     _rose_folio(fig, 2.38, 134.8, 27.9)
@@ -1384,10 +1387,12 @@ def _page_folio(couches, folios, ext_folio, num, total, emprise_glob, titre, nat
 
 
 def generer_folios_apd(dossier_shape: str, chemin_pdf: str, folios_shp: str = None,
-                       titre: str = None, natures: dict = None, code_projet: str = None) -> str:
+                       titre: str = None, natures: dict = None, code_projet: str = None,
+                       opacite: float = 1.0) -> str:
     """2ᵉ série de plans APD (A3 paysage) : 1 page « Vue d'ensemble » + 1 page par
-    folio. Fonds Plan IGN topo (ensemble) / ORTHO (folios) + symbologie NETGEO +
-    légende de référence, 100 % backend. ``code_projet`` : ligne 1 du cartouche."""
+    folio. Fonds ORTHO (folios) + cadastre + symbologie NETGEO + légende de
+    référence, 100 % backend. ``code_projet`` : ligne 1 du cartouche.
+    ``opacite`` : opacité du fond ortho des FOLIOS (0-1, réglée depuis la carte CRM)."""
     from matplotlib.backends.backend_pdf import PdfPages
     couches = _charger_couches_folio(dossier_shape)
     if all(v is None for v in couches.values()):
@@ -1395,6 +1400,10 @@ def generer_folios_apd(dossier_shape: str, chemin_pdf: str, folios_shp: str = No
     folios = _charger_folios(folios_shp, couches)
     titre = titre or _titre_lieu(couches)
     code_projet = code_projet or ""
+    try:
+        opacite = max(0.15, min(1.0, float(opacite)))
+    except (TypeError, ValueError):
+        opacite = 1.0
     emprise_glob = _emprise(couches)
 
     os.makedirs(os.path.dirname(chemin_pdf), exist_ok=True)
@@ -1403,7 +1412,7 @@ def generer_folios_apd(dossier_shape: str, chemin_pdf: str, folios_shp: str = No
         pdf.savefig(fig, dpi=300); plt.close(fig)
         for i, (fid, ext) in enumerate(folios, 1):
             fig = _page_folio(couches, folios, ext, i, len(folios), emprise_glob, titre,
-                              natures=natures, code_projet=code_projet)
+                              natures=natures, code_projet=code_projet, opacite=opacite)
             pdf.savefig(fig, dpi=300); plt.close(fig)
     logger.info(f"Folios APD générés ({len(folios) + 1} pages) : {chemin_pdf}")
     return chemin_pdf
