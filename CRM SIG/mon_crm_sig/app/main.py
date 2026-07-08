@@ -1165,22 +1165,8 @@ async def api_upload_shapefile(
         and couche_bpe is not None and (couche_bpe.nb_entites or 0) > 0
     )
 
-    # Couches SUPPORT/PT/CABLES avec des NOM/LIBELLE vides -> propositions de nomenclature
-    from app.gis import nomenclature
-    couches_a_completer = []
-    objets_vus = set()
-    for c in couches:
-        base = c.nom.upper()
-        if (base.startswith("[LIVRABLE]") or base not in ("SUPPORT", "PT", "CABLES")
-                or base in objets_vus):
-            continue
-        try:
-            gdf = gis_handler.lire_shapefile(c.chemin_fichier)
-            if nomenclature.couche_a_completer(gdf, base):
-                couches_a_completer.append({"id": c.id, "nom": c.nom, "objet": base})
-                objets_vus.add(base)
-        except Exception:
-            pass
+    # Couches SUPPORT/PT/CABLES (input) à compléter -> propositions de nomenclature
+    couches_a_completer = _couches_a_completer(projet, db, livrable=False)
 
     return JSONResponse({
         "success": True,
@@ -1770,6 +1756,33 @@ def api_generer_pdf(projet_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _couches_a_completer(projet, db, livrable=False):
+    """[{id, nom, objet}] des couches SUPPORT/PT/CABLES (livrables si ``livrable``,
+    sinon input) ayant AU MOINS une proposition de nomenclature (ex. PT
+    ``DATE_CREAT`` aaaammjj non faite). Sert à ouvrir le modal de nomenclature à
+    l'import ET après (re)génération des SHP livrables."""
+    from app.gis import nomenclature
+    from app import models
+    out, vus = [], set()
+    for c in db.query(models.CoucheSIG).filter(models.CoucheSIG.projet_id == projet.id).all():
+        nom = c.nom or ""
+        est_liv = nom.strip().lower().startswith("[livrable]")
+        if est_liv != bool(livrable):
+            continue
+        base = nom.upper().replace("[LIVRABLE]", "").strip()
+        if base not in ("SUPPORT", "PT", "CABLES") or base in vus:
+            continue
+        try:
+            chemin = _resoudre_shp_livrable(projet, c) if est_liv else c.chemin_fichier
+            gdf = gis_handler.lire_shapefile(chemin)
+            if nomenclature.couche_a_completer(gdf, base):
+                out.append({"id": c.id, "nom": c.nom, "objet": base})
+                vus.add(base)
+        except Exception:
+            pass
+    return out
+
+
 def _generer_shapes_livrables(projet, db, mode="overwrite"):
     """Génère / actualise les SHP LIVRABLES (source de vérité) depuis les inputs.
 
@@ -2095,6 +2108,14 @@ def api_generer_etude(projet_id: int, type_etude: str, mode: str = "overwrite", 
         )
 
         reponse = {"message": message, "path": dossier_global}
+        # Après (re)génération des SHP livrables : si la nomenclature d'une couche
+        # livrable reste à compléter (ex. PT DATE_CREAT aaaammjj), on le signale
+        # pour rouvrir le modal de nomenclature côté carte.
+        if type_etude in ("shape", "doe_fo_netgeo"):
+            try:
+                reponse["couches_a_completer"] = _couches_a_completer(projet, db, livrable=True)
+            except Exception:
+                reponse["couches_a_completer"] = []
         # URL directe du livrable généré pour ouverture/téléchargement immédiat
         # côté navigateur (projects_data est servi sous /static).
         def _url_statique(chemin):

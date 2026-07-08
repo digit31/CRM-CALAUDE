@@ -907,7 +907,16 @@
                 if (data.pdf_url) {
                     window.open(data.pdf_url + '?_t=' + Date.now(), '_blank');
                 }
-                
+
+                // Dossier NETGEO : si une couche LIVRABLE reste à compléter
+                // (ex. PT DATE_CREAT aaaammjj non faite), on ouvre le modal de
+                // nomenclature — il vit sur la carte, on y redirige avec un drapeau.
+                if (type === 'doe_fo_netgeo' && data.couches_a_completer && data.couches_a_completer.length) {
+                    try { sessionStorage.setItem('open_nomenclature', JSON.stringify(data.couches_a_completer)); } catch (e) {}
+                    setTimeout(() => { window.location.href = '/map/{{ projet.id }}'; }, 900);
+                    return;
+                }
+
                 // Si c'est shape qui est généré, on met à jour currentShpGenere et l'affichage des boutons
                 if (type === 'shape') {
                     currentShpGenere = true;

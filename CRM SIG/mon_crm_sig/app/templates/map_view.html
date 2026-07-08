@@ -1288,8 +1288,14 @@
             .then(r => r.json())
             .then(data => {
                 if (data.error) { throw new Error(data.error); }
-                alert("Cartographie SHP générée avec succès !");
-                window.location.reload();
+                if (data.couches_a_completer && data.couches_a_completer.length) {
+                    // Nomenclature d'une couche LIVRABLE à compléter (ex. PT DATE_CREAT
+                    // aaaammjj non faite) -> on rouvre le modal pour la mettre à jour.
+                    ouvrirNomenclature(data.couches_a_completer);
+                } else {
+                    alert("Cartographie SHP générée avec succès !");
+                    window.location.reload();
+                }
             })
             .catch(err => {
                 console.error(err);
@@ -1324,6 +1330,16 @@
         if (sessionStorage.getItem('nomencl_ok')) {
             sessionStorage.removeItem('nomencl_ok');
             showToast('Nomenclature vérifiée à l\'import : couches conformes, rien à compléter.', 'ok');
+        }
+    } catch (e) {}
+
+    // Ouverture du modal de nomenclature demandée depuis « Dossier NETGEO » (page Études)
+    try {
+        const rawNom = sessionStorage.getItem('open_nomenclature');
+        if (rawNom) {
+            sessionStorage.removeItem('open_nomenclature');
+            const couches = JSON.parse(rawNom);
+            if (couches && couches.length) setTimeout(() => ouvrirNomenclature(couches), 400);
         }
     } catch (e) {}
 </script>
