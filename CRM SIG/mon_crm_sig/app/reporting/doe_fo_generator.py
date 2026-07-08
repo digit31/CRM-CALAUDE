@@ -113,12 +113,7 @@ def appliquer_champs_doe(g, nom_in, date_tvx, fci_par_cable=None,
             g.loc[maj, "DATE_DE_CR"] = date_tvx
     elif nom_in == "PT":
         if _cible("DATE_CREAT") and date_tvx:
-            prop = g["PROPRIETAI"] if "PROPRIETAI" in g.columns else None
-            if prop is not None and prop.notna().any():
-                free = prop.map(lambda v: "FREE" in str(v or "").upper())
-                g.loc[maj & free, "DATE_CREAT"] = date_tvx   # nomenclature : PT FREE
-            else:
-                g.loc[maj, "DATE_CREAT"] = date_tvx
+            g.loc[maj, "DATE_CREAT"] = date_tvx   # DATE_CREAT (aaaammjj) pour TOUS les PT
     elif nom_in == "CABLES":
         if _cible("POSE") and date_tvx:
             g.loc[maj, "POSE"] = date_tvx

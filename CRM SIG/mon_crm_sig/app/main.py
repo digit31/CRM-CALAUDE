@@ -1533,7 +1533,13 @@ def api_propositions_nomenclature(projet_id: int, couche_id: int, db: Session = 
         return JSONResponse({"objet": objet, "nom": couche.nom, "propositions": []})
     try:
         gdf = gis_handler.lire_shapefile(couche.chemin_fichier)
-        props = nomenclature.proposer_couche(gdf, objet)
+        # Étude DOE FO : la date proposée (PT DATE_CREAT, câble POSE) = date TVX.
+        projet = crm_service.obtenir_projet(db, projet_id)
+        date_doe = None
+        if projet and _type_etude_projet(projet).upper().startswith("DOE"):
+            date_doe, _ = _doe_fo_params(projet, os.path.join(projet.chemin_dossier, "01_Inputs_SHP"))
+            date_doe = date_doe or None
+        props = nomenclature.proposer_couche(gdf, objet, date_str=date_doe)
         return JSONResponse({"objet": objet, "nom": couche.nom, "nb": len(props), "propositions": props})
     except Exception as e:
         logger.error(f"Erreur propositions couche #{couche_id}: {str(e)}")
