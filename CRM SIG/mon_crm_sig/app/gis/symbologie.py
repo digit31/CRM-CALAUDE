@@ -474,7 +474,8 @@ def legende_reference():
                     ("ligne", CABLE_COULEURS["BAG"], "BAG"),
                     ("ligne", CABLE_COULEURS["FON"], "FON"),
                     ("ligne", CABLE_COULEURS["CAB"], "CAB"),
-                    ("ligne", CABLE_COULEURS["CBM"], "CBM")]),
+                    ("ligne", CABLE_COULEURS["CBM"], "CBM"),
+                    ("ligne", CABLE_COULEURS["CIM"], "CIM")]),
         ("", [("commune", COMMUNE_CONTOUR, "COMMUNE")]),
     ]
     droite = [

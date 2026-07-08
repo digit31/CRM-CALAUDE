@@ -276,10 +276,10 @@ def calculer_synthese(dossier_shape: str, ref_projet: str = "", date_str: str = 
         commune = _val(com.iloc[0], "NOM")
 
     # Adresse ALIGNÉE sur les folios (SHP livrable = source de vérité) : 1re ADRESSE
-    # non vide dans l'ordre BTS -> NRA -> NRO_RIP -> BPE -> PT — identique à
-    # plan_generator._titre_lieu, pour un libellé d'adresse cohérent partout
-    # (page 1 / synthèse == folios).
-    for g in (bts, nra, nro, bpe, pt):
+    # non vide dans l'ordre BTS -> BPE -> PT — identique à plan_generator._titre_lieu.
+    # NRA/NRO_RIP EXCLUS : souvent à une autre adresse (site distant) -> libellé
+    # incohérent avec le réseau réellement tracé sur les plans.
+    for g in (bts, bpe, pt):
         if g is None or not len(g):
             continue
         trouve = False

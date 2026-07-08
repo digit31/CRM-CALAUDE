@@ -61,6 +61,15 @@ FOND_ORTHO_URL = os.environ.get(
     "&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&STYLE=normal&FORMAT=image/jpeg",
 )
 
+# Surimpression CADASTRE (parcelles + numéros) — PNG transparent, posé sur l'ortho
+# des folios / vue d'ensemble, comme le livrable de référence ENSIO.
+FOND_CADASTRE_URL = os.environ.get(
+    "CRM_SIG_FOND_CADASTRE",
+    "https://data.geopf.fr/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile"
+    "&LAYER=CADASTRALPARCELS.PARCELLAIRE_EXPRESS&TILEMATRIXSET=PM"
+    "&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&STYLE=normal&FORMAT=image/png",
+)
+
 FOND_XYZ_URL = os.environ.get(
     "CRM_SIG_SYNO_FOND",
     "http://mt0.google.com/vt/lyrs=y&hl=fr&x={x}&y={y}&z={z}",
@@ -256,6 +265,73 @@ def _fond_carte(ax, x0, y0, x1, y1, url=None, z_cap=19):
               origin="upper", interpolation="bilinear", zorder=0)
     logger.info(f"Plan : fond de carte {ok}/{nx*ny} tuiles (z{z}).")
     return True
+
+
+def _overlay_cadastre(ax, x0, y0, x1, y1, z_cap=19):
+    """Surimpression des PARCELLES cadastrales (PARCELLAIRE_EXPRESS, PNG
+    transparent : limites + numéros) par-dessus le fond ortho — comme le
+    livrable de référence. Posée sous le réseau (zorder 1.4)."""
+    try:
+        from PIL import Image
+    except ImportError:
+        return
+    largeur = x1 - x0
+    z = 19
+    for cand in range(10, 20):
+        px = largeur / ((2 * _ORIG) / (2 ** cand) / 256)
+        if px >= 2000:
+            z = cand
+            break
+    z = min(z, z_cap)
+    tx0, ty0 = _tuile_de(x0, y1, z)
+    tx1, ty1 = _tuile_de(x1, y0, z)
+    nx, ny = tx1 - tx0 + 1, ty1 - ty0 + 1
+    if nx * ny > 220:
+        return
+    mos = Image.new("RGBA", (nx * 256, ny * 256), (0, 0, 0, 0))
+
+    def _fetch(ij):
+        i, j = ij
+        u = (FOND_CADASTRE_URL.replace("{x}", str(tx0 + i))
+                .replace("{y}", str(ty0 + j)).replace("{z}", str(z)))
+        try:
+            req = urllib.request.Request(u, headers={"User-Agent": "GeoCRM-SIG/1.0"})
+            with urllib.request.urlopen(req, timeout=8) as rep:
+                return i, j, Image.open(io.BytesIO(rep.read())).convert("RGBA")
+        except Exception:
+            return i, j, None
+
+    from concurrent.futures import ThreadPoolExecutor
+    ok = 0
+    with ThreadPoolExecutor(max_workers=12) as ex:
+        for i, j, im in ex.map(_fetch, [(i, j) for i in range(nx) for j in range(ny)]):
+            if im is not None:
+                mos.paste(im, (i * 256, j * 256), im)   # alpha = masque
+                ok += 1
+    if ok == 0:
+        return
+    ex0, _, _, ey1 = _emprise_tuile(tx0, ty0, z)
+    _, ey0, ex1, _ = _emprise_tuile(tx1, ty1, z)
+    ax.imshow(np.asarray(mos), extent=(ex0, ex1, ey0, ey1),
+              origin="upper", interpolation="bilinear", zorder=1.4)
+    logger.info(f"Plan : cadastre {ok}/{nx*ny} tuiles (z{z}).")
+
+
+def _barre_echelle(ax, x0, y0, x1, y1):
+    """Barre d'échelle graphique (noir/blanc) en bas-gauche de la carte."""
+    lat_c = math.degrees(2 * math.atan(math.exp(((y0 + y1) / 2) / _RAYON)) - math.pi / 2)
+    k = math.cos(math.radians(lat_c)) or 1.0
+    pas = _pas_echelle((x1 - x0) * k)
+    pas_carte = pas / k
+    x_ech = x0 + (x1 - x0) * 0.015
+    y_ech = y0 + (y1 - y0) * 0.04
+    h_ech = (y1 - y0) * 0.010
+    for i, coul in enumerate(("black", "white")):
+        ax.add_patch(Rectangle((x_ech + i * pas_carte / 2, y_ech), pas_carte / 2, h_ech,
+                               facecolor=coul, edgecolor="black", linewidth=0.4, zorder=9))
+    for frac, txt in ((0, "0"), (0.5, f"{pas / 2:g}"), (1, f"{pas:g} m")):
+        ax.text(x_ech + frac * pas_carte, y_ech + h_ech * 1.7, txt, fontsize=7.5,
+                ha="center", va="bottom", zorder=9, color="black", path_effects=_tampon(0.7))
 
 
 def _compresser_fond(chemin_pdf, quality=72, seuil=400_000):
@@ -738,6 +814,8 @@ def _legende_encart(fig, l_mm, h_mm, x_mm, y_mm, w_mm, h_box_mm, blocs, blocs2=N
     def _sym(sx, y, forme, coul):
         # Icônes de légende dimensionnées comme le livrable ENSIO (bien visibles).
         if forme == "ligne":
+            if sum(coul) > 720:   # câble quasi-blanc (CIM) : liseré gris pour le voir
+                ax.add_line(Line2D([sx - 4.0, sx + 4.0], [y, y], color=(0.55, 0.55, 0.55), linewidth=4.0))
             ax.add_line(Line2D([sx - 4.0, sx + 4.0], [y, y], color=symb.mpl(coul), linewidth=3.1))
         elif forme == "ligne_pointille":
             ax.add_line(Line2D([sx - 4.0, sx + 4.0], [y, y], color=symb.mpl(coul),
@@ -968,7 +1046,7 @@ def _charger_couches_folio(dossier_shape):
     return out
 
 
-def _emprise(couches, cles=("CABLES", "SUPPORT", "BPE", "BTS", "PT"), marge=0.10):
+def _emprise(couches, cles=("CABLES", "SUPPORT", "BPE", "BTS", "PT"), marge=0.05):
     b = None
     for n in cles:
         g = couches.get(n)
@@ -986,7 +1064,9 @@ def _emprise(couches, cles=("CABLES", "SUPPORT", "BPE", "BTS", "PT"), marge=0.10
 
 def _titre_lieu(couches):
     ad = cp = com = ""
-    for n in ("BTS", "NRA", "NRO_RIP", "BPE", "PT"):
+    # Adresse prise sur le RÉSEAU (BTS/BPE/PT) — NRA/NRO_RIP exclus car souvent
+    # à une autre adresse (site distant), ce qui donnait un libellé incohérent.
+    for n in ("BTS", "BPE", "PT"):
         g = couches.get(n)
         if g is None:
             continue
@@ -1081,7 +1161,9 @@ def _folios_corridor(couches, cible_m=320.0, max_folios=12):
                         pts.append((p.x, p.y))
                 except Exception:
                     pass
-    for n in ("PT", "BPE", "BTS", "NRA", "NRO_RIP"):
+    # NRA / NRO_RIP EXCLUS du cadrage : ils sont souvent loin du réseau (autre
+    # adresse) et étireraient le plan avec du vide — on cadre sur le réseau réel.
+    for n in ("PT", "BPE", "BTS"):
         g = couches.get(n)
         if g is None:
             continue
@@ -1155,7 +1237,7 @@ def _folios_corridor(couches, cible_m=320.0, max_folios=12):
     return folios or _folios_auto(couches, max_folios)
 
 
-def _carte(ax, couches, ext, fond=True, natures=None, url=None, z_cap=19):
+def _carte(ax, couches, ext, fond=True, natures=None, url=None, z_cap=19, cadastre=False):
     x0, y0, x1, y1 = ext
     ax.set_xticks([]); ax.set_yticks([])
     for c in ax.spines.values():
@@ -1164,6 +1246,8 @@ def _carte(ax, couches, ext, fond=True, natures=None, url=None, z_cap=19):
     ax.set_aspect("equal", adjustable="box")
     if fond:
         _fond_carte(ax, x0, y0, x1, y1, url=url or FOND_IGN_URL, z_cap=z_cap)
+        if cadastre:
+            _overlay_cadastre(ax, x0, y0, x1, y1, z_cap=z_cap)
     _dessiner_couches(ax, couches, x0, y0, x1, y1, _lw, _ms, natures=natures)
 
 
@@ -1262,10 +1346,11 @@ def _page_ensemble(couches, folios, titre, natures=None, code_projet=""):
     mx, my, mw, mh = 48.219, 0.25, 371.631, 266.735
     ax = _ax_mm(fig, mx, my, mw, mh)
     ext = _cadrer(_emprise(couches), mw, mh)
-    # Vue d'ensemble : fond Plan IGN v2 TOPO (zoom plafonné pour garder courbes +
-    # toponymes plutôt que le style urbain pâle du sur-zoom).
-    _carte(ax, couches, ext, fond=True, natures=natures, url=FOND_IGN_URL, z_cap=16)
+    # Vue d'ensemble : fond ORTHOPHOTO seul (comme la réf. ENSIO) — pas de cadastre
+    # à cette échelle (trop dense) ; le cadastre est réservé aux folios de détail.
+    _carte(ax, couches, ext, fond=True, natures=natures, url=FOND_ORTHO_URL, z_cap=17)
     _rects_folios(ax, folios)
+    _barre_echelle(ax, *ext)
     # légende de référence (colonne unique, bande gauche étroite) + rose
     _legende_gauche(fig, couches, 1.0, 2.0, 46.0, 230.0, natures=natures, colonnes=1)
     _rose_folio(fig, 11.3, 233.2, 26.0)
@@ -1280,17 +1365,19 @@ def _page_folio(couches, folios, ext_folio, num, total, emprise_glob, titre, nat
     mx, my, mw, mh = 120.005, 0.3, 299.995, 266.535
     ax = _ax_mm(fig, mx, my, mw, mh)
     ext = _cadrer(ext_folio, mw, mh)
-    # Folio de détail : fond ORTHOPHOTO IGN (imagerie aérienne) comme la référence.
-    # z18 = ~0.6 m/px (net à l'impression) tout en limitant le nb de tuiles.
-    _carte(ax, couches, ext, fond=True, natures=natures, url=FOND_ORTHO_URL, z_cap=18)
+    # Folio de détail : fond ORTHOPHOTO + surimpression CADASTRE (parcelles + n°),
+    # comme le livrable de référence. z18 = ~0.6 m/px (net à l'impression).
+    _carte(ax, couches, ext, fond=True, natures=natures, url=FOND_ORTHO_URL,
+           z_cap=18, cadastre=True)
     # colonne gauche : légende de référence 2 COLONNES (haut) + rose + localisation
     _legende_gauche(fig, couches, 1.0, 1.0, 115.0, 130.0, natures=natures, colonnes=2)
     _rose_folio(fig, 2.38, 134.8, 27.9)
     lx, ly, lw_, lh = 0.0, 164.169, 119.705, 102.666
     axl = _ax_mm(fig, lx, ly, lw_, lh)
     ext_loc = _cadrer(emprise_glob, lw_, lh)
-    # Carte de localisation : fond Plan IGN topo (vue d'ensemble).
-    _carte(axl, couches, ext_loc, fond=True, natures=natures, url=FOND_IGN_URL, z_cap=15)
+    # Carte de localisation : fond ORTHO (comme la réf.), sans cadastre (trop dense
+    # à cette échelle réduite).
+    _carte(axl, couches, ext_loc, fond=True, natures=natures, url=FOND_ORTHO_URL, z_cap=16)
     _rects_folios(axl, folios, courant=num)
     _cartouche_folio(fig, titre, f"FOLIO {num}/{total}", code_projet=code_projet)
     return fig
