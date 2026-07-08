@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GeoCRM — Documentation de la plateforme</title>
+<style>
+  :root{
+    --brand:#0d9488; --brand-d:#0f766e; --brand-l:#5eead4; --brand-bg:#f0fdfa;
+    --ink:#0f172a; --muted:#64748b; --line:#e2e8f0; --card:#ffffff; --bg:#f8fafc;
+    --amber:#f59e0b; --amber-bg:#fffbeb; --emerald:#10b981; --emerald-bg:#ecfdf5;
+    --violet:#7c3aed; --sky:#0284c7;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+       color:var(--ink);background:var(--bg);line-height:1.6;font-size:15px}
+  a{color:var(--brand-d);text-decoration:none}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 20px}
+
+  /* Hero */
+  header.hero{background:linear-gradient(135deg,#0f766e 0%,#134e4a 60%,#0f172a 100%);color:#fff;padding:56px 0 48px}
+  .brand{display:flex;align-items:center;gap:14px;margin-bottom:26px}
+  .logo{width:52px;height:52px;border-radius:14px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);
+        display:flex;align-items:center;justify-content:center;font-size:26px}
+  .brand h1{font-size:22px;margin:0;font-weight:800;letter-spacing:.3px}
+  .brand p{margin:0;font-size:12px;text-transform:uppercase;letter-spacing:2px;color:var(--brand-l);font-weight:600}
+  .hero h2{font-size:34px;line-height:1.2;margin:8px 0 14px;font-weight:800;max-width:760px}
+  .hero .lead{font-size:17px;color:#cbd5e1;max-width:720px;margin:0}
+  .pills{display:flex;flex-wrap:wrap;gap:8px;margin-top:24px}
+  .pill{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18);color:#e2e8f0;
+        padding:5px 12px;border-radius:999px;font-size:12.5px;font-weight:600}
+  .stats{display:flex;flex-wrap:wrap;gap:26px;margin-top:30px}
+  .stat b{display:block;font-size:26px;font-weight:800;color:#fff}
+  .stat span{font-size:12px;color:var(--brand-l);text-transform:uppercase;letter-spacing:1px}
+
+  /* Sections */
+  section{padding:44px 0;border-bottom:1px solid var(--line)}
+  .eyebrow{color:var(--brand);font-weight:800;font-size:12px;text-transform:uppercase;letter-spacing:2px;margin:0 0 6px}
+  h3.sec{font-size:24px;margin:0 0 6px;font-weight:800}
+  .sub{color:var(--muted);margin:0 0 26px;max-width:720px}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;transition:.15s}
+  .card:hover{border-color:var(--brand-l);box-shadow:0 8px 24px -12px rgba(13,148,136,.25);transform:translateY(-2px)}
+  .card .ic{width:40px;height:40px;border-radius:11px;background:var(--brand-bg);color:var(--brand-d);
+            display:flex;align-items:center;justify-content:center;font-size:20px;margin-bottom:12px}
+  .card h4{margin:0 0 6px;font-size:16px;font-weight:700}
+  .card p{margin:0;color:var(--muted);font-size:13.5px}
+  .card ul{margin:10px 0 0;padding-left:0;list-style:none}
+  .card li{font-size:13px;color:#334155;padding:3px 0 3px 20px;position:relative}
+  .card li::before{content:"›";position:absolute;left:4px;color:var(--brand);font-weight:800}
+
+  .tag{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;margin-left:6px;vertical-align:middle}
+  .tag.live{background:var(--emerald-bg);color:#047857;border:1px solid #a7f3d0}
+  .tag.soon{background:#f1f5f9;color:#64748b;border:1px solid var(--line)}
+
+  /* Workflow steps */
+  .flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;counter-reset:st}
+  .step{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;position:relative}
+  .step::before{counter-increment:st;content:counter(st);position:absolute;top:-11px;left:16px;width:24px;height:24px;
+                background:var(--brand);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;
+                font-size:13px;font-weight:800}
+  .step h5{margin:8px 0 4px;font-size:14px}
+  .step p{margin:0;font-size:12.5px;color:var(--muted)}
+
+  /* Rule table */
+  table{width:100%;border-collapse:collapse;font-size:13.5px;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--line)}
+  th{background:var(--brand-bg);color:var(--brand-d);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+  tr:last-child td{border-bottom:none}
+  code{background:#f1f5f9;border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:12.5px;font-family:ui-monospace,Menlo,Consolas,monospace;color:#0f766e}
+  .greenpill{display:inline-flex;align-items:center;gap:6px;background:var(--emerald-bg);color:#047857;border:1px solid #a7f3d0;border-radius:999px;padding:2px 9px;font-size:12px;font-weight:600}
+  .greenpill::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--emerald)}
+
+  .note{background:var(--amber-bg);border:1px solid #fde68a;border-radius:12px;padding:14px 16px;color:#92400e;font-size:13.5px;margin-top:18px}
+  .note b{color:#78350f}
+
+  /* Tech stack */
+  .stack{display:flex;flex-wrap:wrap;gap:10px}
+  .chip{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 14px;font-size:13px;font-weight:600;color:#334155}
+  .chip span{color:var(--brand);margin-right:6px}
+
+  footer{padding:34px 0;color:var(--muted);font-size:13px}
+  .toc{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px}
+  .toc a{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);color:#e2e8f0;padding:6px 12px;border-radius:8px;font-size:12.5px;font-weight:600}
+  .toc a:hover{background:rgba(255,255,255,.18)}
+
+  @media (max-width:640px){.hero h2{font-size:26px}.stats{gap:18px}}
+  @media print{.card:hover{transform:none;box-shadow:none}header.hero{background:#0f766e !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="brand">
+      <div class="logo">🛰️</div>
+      <div><h1>GeoCRM</h1><p>Plateforme SIG · Fibre Optique</p></div>
+    </div>
+    <h2>La plateforme qui pilote vos études fibre, de l'import SIG au livrable normé.</h2>
+    <p class="lead">GeoCRM centralise vos affaires FTTH : import des couches SIG, cartographie interactive, édition des livrables, nomenclature NETGEO automatique, et génération des dossiers <b>APD FO</b> et <b>DOE FO</b> (SHP / KMZ / PDF / PDS / plans).</p>
+    <div class="pills">
+      <span class="pill">CRM d'affaires</span>
+      <span class="pill">Cartographie SIG</span>
+      <span class="pill">Nomenclature NETGEO</span>
+      <span class="pill">APD FO</span>
+      <span class="pill">DOE FO</span>
+      <span class="pill">Livrables PDF / SHP / KMZ / PDS</span>
+    </div>
+    <div class="stats">
+      <div class="stat"><b>8</b><span>Modules</span></div>
+      <div class="stat"><b>2</b><span>Types d'étude actifs</span></div>
+      <div class="stat"><b>7</b><span>Familles de livrables</span></div>
+      <div class="stat"><b>100%</b><span>Local &amp; privé</span></div>
+    </div>
+    <nav class="toc">
+      <a href="#modules">Modules</a>
+      <a href="#sig">Cartographie &amp; SIG</a>
+      <a href="#livrables">Livrables</a>
+      <a href="#etudes">Types d'études</a>
+      <a href="#apd">Workflow APD FO</a>
+      <a href="#doe">Workflow DOE FO</a>
+      <a href="#tech">Technique</a>
+    </nav>
+  </div>
+</header>
+
+<!-- MODULES -->
+<section id="modules">
+  <div class="wrap">
+    <p class="eyebrow">Les modules</p>
+    <h3 class="sec">Une plateforme, 8 espaces de travail</h3>
+    <p class="sub">Chaque affaire dispose de son dossier physique structuré (inputs, traitement, livrables) et de ses écrans dédiés.</p>
+    <div class="grid">
+      <div class="card">
+        <div class="ic">📊</div>
+        <h4>Tableau de bord</h4>
+        <p>Vue de toutes les affaires : création, statut, référence automatique.</p>
+        <ul>
+          <li>Nouvelle affaire (nom, client, <b>type d'étude</b>)</li>
+          <li>Modal de consultation (site, adresse, BPE, câbles, appuis)</li>
+          <li>Suivi des statuts</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="ic">🗺️</div>
+        <h4>Carte interactive</h4>
+        <p>Visualisation Leaflet des couches, avec fonds IGN et cadastre.</p>
+        <ul>
+          <li>Fonds Ortho / Plan IGN / OSM + <b>opacité réglable</b></li>
+          <li>Cadastre (parcelles) en surimpression</li>
+          <li>Symbologie métier (NRO, NRA, BTS, SUPPORT, PT, BPE, câbles)</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="ic">✏️</div>
+        <h4>Édition Livrables</h4>
+        <p>Table attributaire éditable des SHP livrables (source de vérité).</p>
+        <ul>
+          <li>Modifier / supprimer / enregistrer les attributs</li>
+          <li>Attributs remplis par le CRM en <span class="greenpill">pastille verte</span></li>
+          <li>BPE/PT existants grisés &amp; verrouillés</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="ic">🖥️</div>
+        <h4>Console Étude</h4>
+        <p>Saisie des caractéristiques de la liaison, pré-remplies depuis les SHP.</p>
+        <ul>
+          <li>Cartouche (code, adresse, commune…)</li>
+          <li>Section <b>DOE FO</b> : Date TVX + FCI par câble</li>
+          <li>Génération du rapport APD depuis la console</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="ic">📁</div>
+        <h4>Études &amp; Livrables</h4>
+        <p>Catalogue des livrables générables, par type d'étude.</p>
+        <ul>
+          <li>Onglets APD FO / DOE FO (verrouillés selon le type)</li>
+          <li>Dossier complet en séquence (modal 5 étapes)</li>
+          <li>Boutons unitaires (rapport, PDS, KMZ, NETGEO…)</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="ic">🧩</div>
+        <h4>Folios (Plans)</h4>
+        <p>Éditeur des folios de plan pour la génération cartographique.</p>
+        <ul>
+          <li>Dessin manuel des folios</li>
+          <li>Auto-génération de la grille</li>
+          <li>Persistance par affaire</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="ic">👥</div>
+        <h4>Clients</h4>
+        <p>Gestion des clients et de leur <b>nomenclature</b> personnalisée.</p>
+        <ul>
+          <li>Création / suppression de clients</li>
+          <li>Règles de nomenclature par client</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="ic">🔐</div>
+        <h4>Accès &amp; Études globales</h4>
+        <p>Gestion des utilisateurs et vue transverse de l'activité.</p>
+        <ul>
+          <li>Utilisateurs / accès</li>
+          <li>Vue globale des études + journal d'activité</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SIG -->
+<section id="sig">
+  <div class="wrap">
+    <p class="eyebrow">Cartographie &amp; SIG</p>
+    <h3 class="sec">Du terrain à la donnée exploitable</h3>
+    <p class="sub">Import des données brutes, cartographie, et normalisation automatique au standard NETGEO.</p>
+    <div class="grid">
+      <div class="card">
+        <div class="ic">📥</div>
+        <h4>Import multi-couches</h4>
+        <p>Glisser-déposer des fichiers dans l'affaire.</p>
+        <ul>
+          <li>Couches SIG <code>.shp</code> (+ .dbf/.shx/.prj)</li>
+          <li>Fichier <b>DATE TVX</b> <code>.txt</code></li>
+          <li>Annexes Orange <b>C6 / C7</b> <code>.xlsx</code></li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="ic">🏷️</div>
+        <h4>Nomenclature NETGEO</h4>
+        <p>Propositions automatiques à l'import (SUPPORT / PT / CÂBLES).</p>
+        <ul>
+          <li>Auto-nommage des objets</li>
+          <li>Normalisation (MAJUSCULE, sans accent)</li>
+          <li>Champs par défaut (EMPRISE, ÉTAT…)</li>
+          <li>Modal de validation + notification systématique</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="ic">🔌</div>
+        <h4>Génération de câbles</h4>
+        <p>Création automatique des câbles depuis SUPPORT + BPE (APD FO).</p>
+      </div>
+      <div class="card">
+        <div class="ic">🧷</div>
+        <h4>Annexes appuis C6 / C7</h4>
+        <p>Enrichissement du PT (NOM + CODE) depuis les annexes Orange.</p>
+        <ul>
+          <li>Détection des appuis par numéro / géolocalisation</li>
+          <li>Natures de travaux (remplacer / recaler / renforcer)</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="ic">🗂️</div>
+        <h4>SHP livrables = source de vérité</h4>
+        <p>Un jeu de SHP livrables alimente la carte, l'édition, le PDS et le KMZ.</p>
+        <ul>
+          <li>Schéma <b>APD FO</b> ou <b>NETGEO</b> selon le type d'étude</li>
+          <li>Verrou « MAJ Shapes » après édition</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="ic">🌐</div>
+        <h4>Fonds IGN Géoplateforme</h4>
+        <p>Orthophotos, Plan IGN v2 et Parcellaire Express (cadastre), opacité pilotable et répercutée à la génération.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- LIVRABLES -->
+<section id="livrables">
+  <div class="wrap">
+    <p class="eyebrow">Les livrables générés</p>
+    <h3 class="sec">7 familles de livrables normés</h3>
+    <p class="sub">Chaque livrable est produit à partir des SHP livrables et de la Console, dans l'arborescence du dossier de l'affaire.</p>
+    <div class="grid">
+      <div class="card"><div class="ic">🗺️</div><h4>SHP livrables</h4><p>Couches conformes au modèle (APD FO) ou au gabarit NETGEO (DOE FO), remplies depuis l'input.</p></div>
+      <div class="card"><div class="ic">🌍</div><h4>KMZ</h4><p>Export Google Earth avec le paramétrage couleur métier des couches.</p></div>
+      <div class="card"><div class="ic">📄</div><h4>Rapport APD HTL</h4><p>Plan APD (PowerPoint rempli → PDF) : cartouche, synthèse, page de plan de masse optionnelle.</p></div>
+      <div class="card"><div class="ic">🗺️</div><h4>Plans &amp; Folios APD</h4><p>Folios cartographiques : fond ortho + cadastre, vue d'ensemble, barre d'échelle, légende de référence, corridor.</p></div>
+      <div class="card"><div class="ic">📊</div><h4>PDS — Plan de câblage</h4><p>Fichier Excel (boîtes / câbles) généré depuis les SHP livrables, avec contrôles.</p></div>
+      <div class="card"><div class="ic">📑</div><h4>Fiche de synthèse PDF</h4><p>Synthèse du projet et de ses couches en PDF.</p></div>
+      <div class="card"><div class="ic">📦</div><h4>DOE NETGEO (SHP/KMZ/DWG)</h4><p>Dossier des ouvrages exécutés : 7 couches NETGEO + KMZ, arborescence complète.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ETUDES -->
+<section id="etudes">
+  <div class="wrap">
+    <p class="eyebrow">Types d'études</p>
+    <h3 class="sec">APD FO &amp; DOE FO — et la suite</h3>
+    <p class="sub">Le type d'étude, choisi à la création (et modifiable sur la carte), pilote les gabarits, les onglets et les livrables.</p>
+    <div class="grid">
+      <div class="card">
+        <div class="ic">⚡</div>
+        <h4>APD FO <span class="tag live">Actif</span></h4>
+        <p>Avant-Projet Détaillé Fibre Optique.</p>
+        <ul>
+          <li>SHP livrables au modèle APD FO</li>
+          <li>Rapport APD HTL, folios, PDS, KMZ</li>
+          <li>Dossier complet en 5 étapes</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="ic">🏗️</div>
+        <h4>DOE FO <span class="tag live">Actif</span></h4>
+        <p>Dossier des Ouvrages Exécutés — l'ouvrage passé en service.</p>
+        <ul>
+          <li>SHP livrables au schéma NETGEO (7 couches)</li>
+          <li>Bouton unique « Dossier NETGEO (SHP/KMZ/DWG) »</li>
+          <li>Date TVX, FCI par câble, exclusion des existants</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="ic">📐</div>
+        <h4>APS · APD GC · DOE GC <span class="tag soon">Bientôt</span></h4>
+        <p>Avant-Projet Sommaire et volets Génie Civil — emplacements réservés dans l'interface.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- APD -->
+<section id="apd">
+  <div class="wrap">
+    <p class="eyebrow">Workflow</p>
+    <h3 class="sec">Parcours APD FO</h3>
+    <p class="sub">De l'import à la génération du dossier complet.</p>
+    <div class="flow">
+      <div class="step"><h5>Créer l'affaire</h5><p>Type « APD FO », client, référence auto.</p></div>
+      <div class="step"><h5>Importer les SHP</h5><p>Couches + annexes C6/C7. Nomenclature auto.</p></div>
+      <div class="step"><h5>Générer les livrables</h5><p>SHP livrables (source de vérité).</p></div>
+      <div class="step"><h5>Console + Folios</h5><p>Saisie cartouche, folios de plan.</p></div>
+      <div class="step"><h5>Dossier complet</h5><p>Rapport APD, PDS, KMZ, plans en séquence.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- DOE -->
+<section id="doe">
+  <div class="wrap">
+    <p class="eyebrow">Workflow</p>
+    <h3 class="sec">Parcours DOE FO &amp; règles de remplissage</h3>
+    <p class="sub">Le DOE FO passe l'ouvrage neuf « en service » et remplit les SHP au standard NETGEO.</p>
+    <div class="flow">
+      <div class="step"><h5>Créer en DOE FO</h5><p>Type d'étude « DOE FO » au modal.</p></div>
+      <div class="step"><h5>Importer SHP + .txt</h5><p>Couches + fichier DATE TVX.</p></div>
+      <div class="step"><h5>Console DOE FO</h5><p>Date TVX + FCI par câble.</p></div>
+      <div class="step"><h5>Dossier NETGEO</h5><p>SHP + KMZ + DWG en un clic.</p></div>
+      <div class="step"><h5>Édition Livrables</h5><p>Contrôle des attributs remplis.</p></div>
+    </div>
+
+    <h4 style="margin:28px 0 10px;font-size:16px">Règles de remplissage automatique</h4>
+    <table>
+      <thead><tr><th>Couche</th><th>Attribut</th><th>Valeur appliquée</th></tr></thead>
+      <tbody>
+        <tr><td><b>CÂBLE</b></td><td><code>POSE</code></td><td><span class="greenpill">Date TVX</span> (aaaammjj)</td></tr>
+        <tr><td><b>CÂBLE</b></td><td><code>FCI</code></td><td><span class="greenpill">Numéro FCI</span> par câble (ou unique pour tous)</td></tr>
+        <tr><td><b>BPE</b></td><td><code>DATE_DE_CR</code> · <code>ETAT</code></td><td><span class="greenpill">Date TVX</span> + « EN SERVICE » (neuf) ; existant exclu</td></tr>
+        <tr><td><b>PT</b></td><td><code>DATE_CREAT</code></td><td><code>AAAAMMJJ</code> (placeholder conservé — jamais la date TVX)</td></tr>
+        <tr><td><b>SUPPORT</b></td><td><code>DATE_CONST</code></td><td>Valeur d'entrée conservée</td></tr>
+        <tr><td><b>NRO / NRA / BTS</b></td><td>—</td><td>Copie conforme au schéma NETGEO</td></tr>
+      </tbody>
+    </table>
+    <div class="note">
+      <b>Exclusions.</b> Les <b>BPE existants (EN SERVICE)</b> et leurs <b>PT co-localisés</b> sont exclus du livrable NETGEO et affichés grisés / verrouillés dans l'Édition Livrables — pour ne pas les confondre avec le neuf. La <b>Date TVX est obligatoire</b> : elle garantit le remplissage automatique de POSE et DATE_DE_CR.
+    </div>
+  </div>
+</section>
+
+<!-- TECH -->
+<section id="tech">
+  <div class="wrap">
+    <p class="eyebrow">Sous le capot</p>
+    <h3 class="sec">Stack technique</h3>
+    <p class="sub">Application web locale, sans dépendance cloud pour vos données — vos SHP restent chez vous.</p>
+    <div class="stack">
+      <div class="chip"><span>▹</span>FastAPI (Python)</div>
+      <div class="chip"><span>▹</span>SQLAlchemy · SQLite</div>
+      <div class="chip"><span>▹</span>GeoPandas · Shapely</div>
+      <div class="chip"><span>▹</span>Leaflet · IGN Géoplateforme</div>
+      <div class="chip"><span>▹</span>Matplotlib (plans PDF)</div>
+      <div class="chip"><span>▹</span>python-pptx · PDF</div>
+      <div class="chip"><span>▹</span>openpyxl (PDS / annexes)</div>
+      <div class="chip"><span>▹</span>simplekml (KMZ)</div>
+      <div class="chip"><span>▹</span>Jinja2 · Tailwind</div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <b style="color:var(--ink)">GeoCRM — Plateforme SIG Fibre Optique.</b><br>
+    Documentation générée automatiquement · Serveur local · Vos données restent privées.
+  </div>
+</footer>
+
+</body>
+</html>
