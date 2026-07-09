@@ -279,6 +279,25 @@ def page_console(request: Request, projet_id: int, db: Session = Depends(get_db)
     })
 
 
+def _console_defauts(projet) -> dict:
+    """Valeurs AUTO calculées depuis les SHP livrables (base de la Console/rapport
+    APD). Source de vérité pour tout ce qui est déductible du SHP."""
+    from datetime import datetime
+    from app.reporting import apd_generator
+    dossier_shape = _trouver_dossier_shape(projet)
+    date_str = datetime.utcnow().strftime("%d/%m/%Y")
+    ref = projet.reference or f"AFF_{projet.id}"
+    try:
+        natures = _natures_appuis_projet(projet, dossier_shape)
+        return apd_generator.calculer_synthese(dossier_shape, ref_projet=ref,
+                                               date_str=date_str, natures_appuis=natures)
+    except Exception as e:
+        logger.warning(f"Console : calcul synthèse impossible ({e})")
+        return {"cartouche": {"code_projet": ref.replace("-", "_"), "date_real": date_str,
+                              "version": "V1", "type_etude": "APD HTL"},
+                "souterrain": {}, "aerien": {}, "appuis": {}, "boites": {}, "infos": ""}
+
+
 @app.get("/api/projets/{projet_id}/console/donnees")
 def api_console_donnees(projet_id: int, recalc: int = 0, db: Session = Depends(get_db)):
     """
@@ -286,7 +305,6 @@ def api_console_donnees(projet_id: int, recalc: int = 0, db: Session = Depends(g
     livrables, fusionnés avec la dernière saisie (sauf ?recalc=1 = valeurs SHP
     fraîches en écrasant les champs numériques déductibles).
     """
-    from datetime import datetime
     from app.reporting import apd_generator
     import json as _json
 
@@ -294,18 +312,7 @@ def api_console_donnees(projet_id: int, recalc: int = 0, db: Session = Depends(g
     if not projet:
         raise HTTPException(status_code=404, detail="Projet non trouvé")
 
-    dossier_shape = _trouver_dossier_shape(projet)
-    date_str = datetime.utcnow().strftime("%d/%m/%Y")
-    ref = projet.reference or f"AFF_{projet.id}"
-    try:
-        natures = _natures_appuis_projet(projet, dossier_shape)
-        defauts = apd_generator.calculer_synthese(dossier_shape, ref_projet=ref,
-                                                  date_str=date_str, natures_appuis=natures)
-    except Exception as e:
-        logger.warning(f"Console : calcul synthèse impossible ({e})")
-        defauts = {"cartouche": {"code_projet": ref.replace("-", "_"), "date_real": date_str,
-                                 "version": "V1", "type_etude": "APD HTL"},
-                   "souterrain": {}, "aerien": {}, "appuis": {}, "boites": {}, "infos": ""}
+    defauts = _console_defauts(projet)
 
     sauvegarde = {}
     p = _chemin_console_json(projet)
@@ -326,8 +333,11 @@ def api_console_donnees(projet_id: int, recalc: int = 0, db: Session = Depends(g
 
 @app.post("/api/projets/{projet_id}/console")
 async def api_console_sauver(projet_id: int, request: Request, db: Session = Depends(get_db)):
-    """Sauvegarde les données saisies dans la console (JSON par projet)."""
+    """Sauvegarde la console : on ne persiste QUE les vrais overrides (champs
+    différents du calcul CRM). Les valeurs laissées à leur défaut restent auto et
+    suivent donc toujours le SHP livrable (mise à jour des longueurs comprise)."""
     import json as _json
+    from app.reporting import apd_generator
     projet = crm_service.obtenir_projet(db, projet_id)
     if not projet:
         raise HTTPException(status_code=404, detail="Projet non trouvé")
@@ -336,9 +346,13 @@ async def api_console_sauver(projet_id: int, request: Request, db: Session = Dep
     except Exception:
         raise HTTPException(status_code=400, detail="Corps JSON invalide.")
     try:
+        defauts = _console_defauts(projet)
+        overrides = apd_generator.filtrer_overrides(defauts, donnees)
         with open(_chemin_console_json(projet), "w", encoding="utf-8") as f:
-            _json.dump(donnees, f, ensure_ascii=False, indent=2)
-        return JSONResponse({"message": "Données de la console enregistrées."})
+            _json.dump(overrides, f, ensure_ascii=False, indent=2)
+        return JSONResponse({"message": "Données de la console enregistrées.",
+                             "overrides": sum(len(v) if isinstance(v, dict) else 1
+                                              for v in overrides.values())})
     except Exception as e:
         logger.error(f"Console : sauvegarde impossible projet {projet_id} ({e})")
         raise HTTPException(status_code=500, detail=str(e))

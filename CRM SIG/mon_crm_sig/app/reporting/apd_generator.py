@@ -490,6 +490,27 @@ def sources_console(defauts: dict, sauvegarde: dict) -> dict:
     return out
 
 
+def filtrer_overrides(defauts: dict, saisie: dict) -> dict:
+    """Ne conserve de la saisie Console que les VRAIS overrides : champs manuels
+    dont la valeur diffère du défaut CRM (+ « infos » si modifié). Les champs
+    laissés à leur valeur auto ne sont PAS persistés — ils reflètent donc toujours
+    le SHP livrable (et la mise à jour des longueurs). Les overrides restent figés."""
+    out = {}
+    saisie = saisie or {}
+    for sec, champs in _CHAMPS_MANUELS.items():
+        src = saisie.get(sec)
+        if not isinstance(src, dict):
+            continue
+        df = defauts.get(sec) or {}
+        keep = {k: src[k] for k in champs
+                if src.get(k) is not None and _neq(src[k], df.get(k))}
+        if keep:
+            out[sec] = keep
+    if saisie.get("infos") is not None and _neq(saisie.get("infos"), defauts.get("infos") or ""):
+        out["infos"] = saisie["infos"]
+    return out
+
+
 # ---------------------------------------------------------------------------
 # 2. Rapport APD_HTL (PDF)
 # ---------------------------------------------------------------------------
