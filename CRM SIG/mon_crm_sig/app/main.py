@@ -371,6 +371,12 @@ def _tache_flag(tache_id, flag):
         return bool(t and t.get(flag))
 
 
+def _tache_val(tache_id, key, default=None):
+    with _TACHES_LOCK:
+        t = _TACHES.get(tache_id)
+        return t.get(key, default) if t else default
+
+
 def _maj_tache(tache_id, **kw):
     with _TACHES_LOCK:
         t = _TACHES.get(tache_id)
@@ -423,10 +429,22 @@ def _executer_tache(tache_id, projet_id, etapes, mode):
                 _maj_tache_etape(tache_id, i, "ignore", duree=0)
                 continue
             # Acquisition du verrou : si une autre génération le tient -> « en attente ».
+            # Le temps d'attente est compté À PART (attente_s), pas dans la génération.
             if not _GEN_LOCK.acquire(blocking=False):
                 _maj_tache(tache_id, statut="en_attente")
                 _maj_tache_etape(tache_id, i, "en_attente")
-                _GEN_LOCK.acquire()
+                w0 = _time.time()
+                att_base = _tache_val(tache_id, "attente_s", 0) or 0
+                while not _GEN_LOCK.acquire(timeout=0.4):
+                    if _tache_flag(tache_id, "annuler"):   # annulable pendant l'attente
+                        _finir_tache(tache_id, projet, "annule", "Génération annulée.", t0)
+                        return
+                    _maj_tache(tache_id, attente_s=att_base + (_time.time() - w0))
+                _maj_tache(tache_id, attente_s=att_base + (_time.time() - w0))
+                if _tache_flag(tache_id, "annuler"):
+                    _GEN_LOCK.release()
+                    _finir_tache(tache_id, projet, "annule", "Génération annulée.", t0)
+                    return
             et0 = _time.time()
             try:
                 _maj_tache(tache_id, statut="en_cours")
@@ -467,19 +485,25 @@ def _finir_tache(tache_id, projet, statut, message, t0):
     """Clôt une tâche : fige son état (statut/fin/durée) et l'ARCHIVE en carte
     persistante (taches_historique.json) pour l'Historique."""
     from datetime import datetime as _dtc
-    duree = int(_time.time() - t0)
+    total = int(_time.time() - t0)
     with _TACHES_LOCK:
         t = _TACHES.get(tache_id)
         if not t:
             return
+        att = int(round(t.get("attente_s") or 0))
+        etapes = t.get("etapes") or []
+        # temps de GÉNÉRATION (hors attente) = somme des durées d'étape ; sinon total - attente
+        gen = sum(int(e.get("duree_s") or 0) for e in etapes) if etapes else max(0, total - att)
         t["statut"] = statut
         t["progression"] = 100 if statut == "termine" else t.get("progression", 0)
         t["fin"] = _dtc.now().isoformat(timespec="seconds")
-        t["duree_s"] = duree
+        t["duree_s"] = gen               # temps de génération (hors attente)
+        t["attente_s"] = att             # temps d'attente (compté à part)
+        t["duree_totale_s"] = total      # total (attente + génération)
         t["message"] = message
         record = {k: t.get(k) for k in ("id", "projet_id", "projet_nom", "type", "label",
                                         "statut", "etapes", "nb_etapes", "debut", "fin",
-                                        "duree_s", "message", "resultat")}
+                                        "duree_s", "attente_s", "duree_totale_s", "message", "resultat")}
     try:
         _ajouter_tache_hist(projet, record)
     except Exception as e:
@@ -503,7 +527,7 @@ def _lancer_tache(projet_id, type_, mode="overwrite", projet_nom=""):
             "etapes": [{"key": k, "label": _ETAPE_LABELS.get(k, k), "statut": "en_attente", "duree_s": None}
                        for k in etapes],
             "progression": 0, "debut": _dtc.now().isoformat(timespec="seconds"),
-            "fin": None, "duree_s": None, "message": "", "resultat": {},
+            "fin": None, "duree_s": None, "attente_s": 0, "message": "", "resultat": {},
             "pause": False, "annuler": False,   # contrôles (pause/reprise/annulation)
         }
     th = _threading.Thread(target=_executer_tache, args=(tache_id, projet_id, etapes, mode), daemon=True)
@@ -528,9 +552,14 @@ async def api_lancer_tache(projet_id: int, request: Request, db: Session = Depen
     valides = set(_ETAPE_LABELS) | {"dossier_complet"}
     if type_ not in valides:
         raise HTTPException(status_code=400, detail=f"Type de génération inconnu : {type_}")
+    # Combien de générations sont DÉJÀ actives (avant celle-ci) -> file d'attente.
+    with _TACHES_LOCK:
+        deja_actives = sum(1 for v in _TACHES.values()
+                           if v.get("statut") in ("en_cours", "en_attente", "en_pause"))
     tache_id = _lancer_tache(projet_id, type_, mode, projet_nom=projet.nom)
     return JSONResponse({"tache_id": tache_id, "label": _label_tache(type_),
-                         "message": "Génération lancée en arrière-plan."})
+                         "message": "Génération lancée en arrière-plan.",
+                         "deja_actives": deja_actives})
 
 
 @app.post("/api/projets/{projet_id}/taches/{tache_id}/{action}")

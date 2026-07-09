@@ -45,7 +45,6 @@
     const ets = t.etapes || [];
     const multi = (t.nb_etapes || 1) > 1 || ets.length > 1;
     const heure = fmtHeure(t.fin || t.debut);
-    const dureeTxt = (t.duree_s != null) ? fmtDuree(t.duree_s) : '';
     let steps = '';
     if (multi && ets.length) {
       steps = '<div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 mt-3">' + ets.map(e => {
@@ -82,8 +81,19 @@
          : t.statut === 'en_attente' ? '<span class="text-slate-500">En file d\'attente — démarrera à la fin de la génération en cours</span>'
          : '<span class="' + m.tc + ' font-semibold">' + m.txt + '</span>')
       : (t.message ? '<span class="text-slate-500">' + esc(t.message) + '</span>' : '<span class="' + m.tc + '">' + m.txt + '</span>');
-    const dur = dureeTxt ? '<span class="text-[11px] text-slate-400">' + dureeTxt + '</span>'
-      : (active && t.debut ? '<span class="text-[11px] font-mono text-slate-400" data-debut="' + esc(t.debut) + '">' + elapsed(t.debut) + '</span>' : '');
+    // Temps : GÉNÉRATION (hors attente) + attente comptée à part.
+    let dur;
+    if (t.duree_s != null) {
+      dur = '<span class="text-[11px] text-slate-400">' + fmtDuree(t.duree_s) + (t.attente_s ? ' · attente ' + fmtDuree(t.attente_s) : '') + '</span>';
+    } else if (active && t.debut) {
+      const att = t.attente_s || 0;
+      if (t.statut === 'en_attente') {
+        dur = '<span class="text-[11px] font-mono text-slate-500">attente ' + fmtDuree(att) + '</span>';
+      } else {
+        const gen = Math.max(0, (Date.now() - new Date(t.debut).getTime()) / 1000 - att);
+        dur = '<span class="text-[11px] font-mono text-slate-400"><span data-gen="' + esc(t.debut) + '" data-att="' + att + '">' + fmtDuree(gen) + '</span>' + (att ? ' · attente ' + fmtDuree(att) : '') + '</span>';
+      }
+    } else dur = '';
     return '<div class="bg-white rounded-xl border ' + m.bd + ' shadow-sm p-4' + (m.dim ? ' opacity-70' : '') + '">'
       + '<div class="flex items-start gap-3">'
       + '<div class="mt-0.5 flex-shrink-0 h-8 w-8 rounded-lg flex items-center justify-center ' + (icBg[m.ic] || icBg.spin) + '">' + bigIc(m.ic) + '</div>'
@@ -122,7 +132,7 @@
         }).catch(() => {});
     }
     window.__histReload = charger;
-    setInterval(() => { document.querySelectorAll('[data-debut]').forEach(s => { s.textContent = elapsed(s.dataset.debut); }); }, 1000);
+    setInterval(() => { document.querySelectorAll('[data-gen]').forEach(s => { const att = parseFloat(s.dataset.att || '0') || 0; s.textContent = fmtDuree(Math.max(0, (Date.now() - new Date(s.dataset.gen).getTime()) / 1000 - att)); }); }, 1000);
     charger();
     setInterval(charger, 1500);
   };
