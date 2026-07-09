@@ -902,6 +902,9 @@ def api_creer_projet(
             _sauver_type_etude_projet(projet, type_etude)
         except Exception:
             pass
+        # NB : les SHP livrables ne sont PAS créés ici. Ils sont générés à la
+        # demande — pour le DOE FO, via le bouton « Dossier NETGEO (SHP/KMZ/DWG) »
+        # (schéma NETGEO), depuis les couches importées.
         return RedirectResponse(url="/", status_code=303)
     except Exception as e:
         logger.error(f"Erreur API creer_projet: {str(e)}")
