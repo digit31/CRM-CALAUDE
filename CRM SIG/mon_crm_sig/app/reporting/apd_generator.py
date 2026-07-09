@@ -106,9 +106,12 @@ def calculer_synthese(dossier_shape: str, ref_projet: str = "", date_str: str = 
     sout = {"blo": 0, "free": 0, "gc": 0, "tiers": 0, "total": 0}
     aer = {"free": 0, "orange": 0, "enedis": 0, "tiers": 0}
     aer_ap = {"free": 0, "orange": 0, "enedis": 0, "tiers": 0}
+    gc_free_geoms = []   # tronçons GC FREE (pour compter les chambres traversées)
     if sup is not None:
         for _, r in sup.iterrows():
             prop = _up(r, "PROPRIETAI")
+            gest = _up(r, "GESTIONNAI")
+            code = _up(r, "CODE")
             compo = _up(r, "COMPOSITIO")
             struc = _up(r, "TYPE_STRUC")
             lgr = 0
@@ -116,6 +119,15 @@ def calculer_synthese(dossier_shape: str, ref_projet: str = "", date_str: str = 
                 lgr = int(round(float(r.get("LGR_REEL") or 0)))
             except (TypeError, ValueError):
                 lgr = 0
+            # GC FREE : PROPRIETAIRE = GESTIONNAIRE = « FREE MOBILE » ET « GC FREE »
+            # dans CODE / COMPOSITION -> longueur GC FREE (et chambres traversées).
+            if (prop == "FREE MOBILE" and gest == "FREE MOBILE"
+                    and ("GC FREE" in compo or "GC FREE" in code)):
+                sout["gc"] += lgr
+                sout["total"] += lgr
+                if r.geometry is not None and not r.geometry.is_empty:
+                    gc_free_geoms.append(r.geometry)
+                continue
             free = "FREE" in prop
             enedis = "ENEDIS" in prop
             ftorange = ("FT" in prop) or ("ORANGE" in prop)
@@ -133,10 +145,7 @@ def calculer_synthese(dossier_shape: str, ref_projet: str = "", date_str: str = 
             else:  # souterrain
                 sout["total"] += lgr
                 if free:
-                    if compo.startswith("GC FREE"):
-                        sout["gc"] += lgr
-                    else:
-                        sout["free"] += lgr
+                    sout["free"] += lgr
                 elif ftorange or enedis:
                     sout["blo"] += lgr
                 else:
@@ -177,6 +186,21 @@ def calculer_synthese(dossier_shape: str, ref_projet: str = "", date_str: str = 
                     ch["blo"] += 1
                 else:
                     ch["tiers"] += 1
+
+    # --- Chambres traversées GC FREE : chambre PROPRIETAIRE=GESTIONNAIRE=FREE MOBILE
+    #     et ETAT « EN ETUDE » qui intersecte un tronçon GC FREE. ---
+    gc_ch = 0
+    if pt is not None and gc_free_geoms:
+        from shapely.ops import unary_union
+        gc_union = unary_union(gc_free_geoms)
+        for _, r in pt.iterrows():
+            if _est_poteau(_up(r, "TYPE_STRUC")):
+                continue    # chambres uniquement
+            if (_up(r, "PROPRIETAI") == "FREE MOBILE" and _up(r, "GESTIONNAI") == "FREE MOBILE"
+                    and "ETUDE" in _up(r, "ETAT")):
+                g = r.geometry
+                if g is not None and not g.is_empty and g.distance(gc_union) <= 0.5:
+                    gc_ch += 1
 
     # Appuis à remplacer / recaler-renforcer depuis les annexes C6/C7 (par NOM,
     # poteaux réellement présents dans PT). « recaler » regroupe recalage +
@@ -308,8 +332,8 @@ def calculer_synthese(dossier_shape: str, ref_projet: str = "", date_str: str = 
     else:
         vtl_ml, vtl_visible = 0, False
 
-    # GC : longueur issue de l'APD GC (saisie manuelle), non déduite du SHP FO.
-    gc_ml = 0
+    # GC FREE : longueur déduite du SHP (tronçons GC FREE « FREE MOBILE » ci-dessus).
+    gc_ml = sout["gc"]
 
     # --- Totaux souterrains (total des lignes du dessus) ---
     total_sout = sout["blo"] + sout["free"] + sout["tiers"] + gc_ml + vtl_ml
@@ -335,7 +359,7 @@ def calculer_synthese(dossier_shape: str, ref_projet: str = "", date_str: str = 
             "blo_ml": sout["blo"], "blo_ch": ch["blo"],
             "free_ml": sout["free"], "free_ch": ch["free"],
             "tiers_nom": "", "tiers_ml": sout["tiers"], "tiers_ch": ch["tiers"],
-            "gc_ml": gc_ml, "gc_ch": 0,
+            "gc_ml": gc_ml, "gc_ch": gc_ch,
             "vtl_ml": vtl_ml, "vtl_visible": vtl_visible,
             "total_ml": total_sout, "total_love_ml": total_sout_love,
             # supplément additif du love (avant x1,05) — permet de recalculer le love
@@ -377,11 +401,12 @@ def fusionner(defauts: dict, sauvegarde: dict) -> dict:
 # du SHP tout en préservant les saisies de l'utilisateur.
 _CHAMPS_MANUELS = {
     "cartouche": ("fait_par", "version"),
-    # Réseaux souterrains + aériens : TOUTES les longueurs / appuis sont éditables
-    # et conservés (la saisie utilisateur l'emporte sur le calcul SHP). Les totaux
-    # (total_ml / total_ap / total_love_ml) restent dérivés (recalculés ci-dessous).
+    # Réseaux souterrains + aériens : les longueurs / appuis sont éditables et
+    # conservés (la saisie utilisateur l'emporte sur le calcul SHP). EXCEPTION :
+    # GC FREE (gc_ml / gc_ch) est TOUJOURS calculé depuis le SHP (règle FREE MOBILE
+    # + « GC FREE »), donc non listé ici -> auto-rempli pour chaque projet.
     "souterrain": ("blo_ml", "blo_ch", "free_ml", "free_ch",
-                   "gc_ml", "gc_ch", "tiers_nom", "tiers_ml", "tiers_ch", "vtl_ml"),
+                   "tiers_nom", "tiers_ml", "tiers_ch", "vtl_ml"),
     "aerien": ("free_ml", "free_ap", "orange_ml", "orange_ap",
                "enedis_ml", "enedis_ap", "tiers_nom", "tiers_ml", "tiers_ap"),
     "appuis": ("remplacer", "recaler"),
