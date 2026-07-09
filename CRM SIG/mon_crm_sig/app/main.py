@@ -134,6 +134,12 @@ def page_dashboard(request: Request, db: Session = Depends(get_db)):
     })
 
 
+@app.get("/activite", response_class=HTMLResponse)
+def page_activite(request: Request, db: Session = Depends(get_db)):
+    """Page ADMIN : activité globale — générations en cours + terminées, tous projets."""
+    return templates.TemplateResponse("activite.html", {"request": request})
+
+
 @app.get("/map/{projet_id}")
 def page_carte(request: Request, projet_id: int, db: Session = Depends(get_db)):
     """Page cartographique : Affichage des couches SIG d'un projet."""
