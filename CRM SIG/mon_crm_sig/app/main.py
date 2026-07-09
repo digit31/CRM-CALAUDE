@@ -295,10 +295,61 @@ _ETAPE_LABELS = {
 }
 _DOSSIER_COMPLET_ETAPES = ["shape", "rapport", "pds", "syno", "kmz"]
 
+# Contexte thread : True pendant qu'un thread de tâche exécute api_generer_etude
+# (pour ne PAS ré-enregistrer chaque étape en tant que génération unitaire — c'est
+# la tâche qui enregistre l'agrégat). Les appels SYNC (modals) ont in_task=False.
+_TASK_CTX = _threading.local()
+
 
 def _label_tache(type_):
     return "Dossier complet (APD FO)" if type_ == "dossier_complet" \
         else _ETAPE_LABELS.get(type_, type_)
+
+
+# --- Persistance des générations terminées (cartes de l'Historique) -----------
+def _taches_hist_path(projet) -> str:
+    d = os.path.join(projet.chemin_dossier, "02_Traitement")
+    os.makedirs(d, exist_ok=True)
+    return os.path.join(d, "taches_historique.json")
+
+
+def _lire_taches_hist(projet) -> list:
+    import json as _json
+    p = _taches_hist_path(projet)
+    if os.path.exists(p):
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                return _json.load(f) or []
+        except Exception:
+            return []
+    return []
+
+
+def _ajouter_tache_hist(projet, record: dict):
+    """Ajoute une génération terminée au journal (carte). Plus récent en tête, borné."""
+    import json as _json
+    hist = _lire_taches_hist(projet)
+    hist.insert(0, record)
+    hist = hist[:200]
+    try:
+        with open(_taches_hist_path(projet), "w", encoding="utf-8") as f:
+            _json.dump(hist, f, ensure_ascii=False, indent=1)
+    except Exception as e:
+        logger.warning(f"Historique tâches non écrit (projet {projet.id}) : {e}")
+
+
+def _carte_generation(projet, type_, statut, message, duree_s=None, path="", label=None):
+    """Archive une génération/modification UNITAIRE comme carte d'historique
+    (appels synchrones depuis les modals, ou MAJ longueurs)."""
+    from datetime import datetime as _dtc
+    now = _dtc.now().isoformat(timespec="seconds")
+    _ajouter_tache_hist(projet, {
+        "id": _uuid.uuid4().hex[:12], "projet_id": projet.id, "projet_nom": projet.nom,
+        "type": type_, "label": label or _ETAPE_LABELS.get(type_, type_),
+        "statut": statut, "etapes": [], "nb_etapes": 1,
+        "debut": now, "fin": now, "duree_s": duree_s,
+        "message": message, "resultat": {"path": path} if path else {},
+    })
 
 
 def _snapshot_taches(projet_id):
@@ -352,91 +403,99 @@ def _executer_tache(tache_id, projet_id, etapes, mode):
                 _maj_tache(tache_id, statut="en_pause")
                 _time.sleep(0.4)
             if _tache_flag(tache_id, "annuler") or tache_id not in _TACHES:
-                _finir_tache(tache_id, projet, "annule", "Génération annulée.", t0, journaliser=True)
+                _finir_tache(tache_id, projet, "annule", "Génération annulée.", t0)
                 return
             with _TACHES_LOCK:
                 t = _TACHES.get(tache_id)
                 if t is None:
                     return
-                t["statut"] = "en_cours"
                 t["etape_idx"] = i
                 t["etape"] = _ETAPE_LABELS.get(key, key)
                 t["progression"] = int(i * 100 / nb)
-                t["etapes"][i]["statut"] = "en_cours"
-            # Optimisation : dans un dossier complet, sauter « shape » si déjà à jour
-            # (livrables présents, pas de MAJ en attente). Une demande « shape » seule
-            # (nb=1) régénère toujours.
+            # Optimisation : dans un dossier complet, sauter « shape » si déjà à jour.
             if key == "shape" and nb > 1 and not _shapes_a_maj(projet) and _shp_livrable_existe(projet):
-                _maj_tache_etape(tache_id, i, "ignore")
+                _maj_tache_etape(tache_id, i, "ignore", duree=0)
                 continue
+            # Acquisition du verrou : si une autre génération le tient -> « en attente ».
+            if not _GEN_LOCK.acquire(blocking=False):
+                _maj_tache(tache_id, statut="en_attente")
+                _maj_tache_etape(tache_id, i, "en_attente")
+                _GEN_LOCK.acquire()
+            et0 = _time.time()
             try:
+                _maj_tache(tache_id, statut="en_cours")
+                _maj_tache_etape(tache_id, i, "en_cours")
+                _TASK_CTX.in_task = True          # évite le double-enregistrement par étape
                 resp = api_generer_etude(projet_id, key, mode, db=db)
                 dernier = _json.loads(getattr(resp, "body", b"{}") or b"{}")
-                _maj_tache_etape(tache_id, i, "termine", resultat=dernier)
+                _maj_tache_etape(tache_id, i, "termine", duree=int(_time.time() - et0),
+                                 resultat=dernier)
             except Exception as e:
                 detail = e.detail if isinstance(e, HTTPException) else str(e)
                 logger.error(f"Tâche {tache_id} étape {key} : {detail}")
-                _maj_tache_etape(tache_id, i, "erreur")
+                _maj_tache_etape(tache_id, i, "erreur", duree=int(_time.time() - et0))
                 _finir_tache(tache_id, projet, "erreur",
-                             f"{_ETAPE_LABELS.get(key, key)} : {detail}", t0, journaliser=True)
+                             f"{_ETAPE_LABELS.get(key, key)} : {detail}", t0)
                 return
+            finally:
+                _TASK_CTX.in_task = False
+                _GEN_LOCK.release()
         _finir_tache(tache_id, projet, "termine",
-                     dernier.get("message", "Génération terminée."), t0, journaliser=False)
+                     dernier.get("message", "Génération terminée."), t0)
     finally:
         db.close()
 
 
-def _maj_tache_etape(tache_id, i, statut, resultat=None):
+def _maj_tache_etape(tache_id, i, statut, duree=None, resultat=None):
     with _TACHES_LOCK:
         t = _TACHES.get(tache_id)
         if t:
             t["etapes"][i]["statut"] = statut
+            if duree is not None:
+                t["etapes"][i]["duree_s"] = duree
             if resultat is not None:
                 t["resultat"] = resultat
 
 
-def _finir_tache(tache_id, projet, statut, message, t0, journaliser):
-    """Clôt une tâche : met à jour son état et (si demandé, i.e. sur erreur)
-    journalise dans LogGeneration."""
+def _finir_tache(tache_id, projet, statut, message, t0):
+    """Clôt une tâche : fige son état (statut/fin/durée) et l'ARCHIVE en carte
+    persistante (taches_historique.json) pour l'Historique."""
     from datetime import datetime as _dtc
     duree = int(_time.time() - t0)
     with _TACHES_LOCK:
         t = _TACHES.get(tache_id)
-        label = t.get("label", "Génération") if t else "Génération"
-        if t:
-            t["statut"] = statut
-            t["progression"] = 100 if statut == "termine" else t.get("progression", 0)
-            t["fin"] = _dtc.now().isoformat(timespec="seconds")
-            t["duree_s"] = duree
-            t["message"] = message
-    if journaliser:
-        prefixe = "⊘ ANNULÉE —" if statut == "annule" else "✗ ÉCHEC —"
-        try:
-            from app.database import SessionLocal
-            dbx = SessionLocal()
-            try:
-                crm_service.enregistrer_log(dbx, projet.id, f"{label} (arrière-plan)",
-                                            details=f"{prefixe} {message} ({duree}s)")
-            finally:
-                dbx.close()
-        except Exception as e:
-            logger.warning(f"Journalisation tâche {tache_id} : {e}")
+        if not t:
+            return
+        t["statut"] = statut
+        t["progression"] = 100 if statut == "termine" else t.get("progression", 0)
+        t["fin"] = _dtc.now().isoformat(timespec="seconds")
+        t["duree_s"] = duree
+        t["message"] = message
+        record = {k: t.get(k) for k in ("id", "projet_id", "projet_nom", "type", "label",
+                                        "statut", "etapes", "nb_etapes", "debut", "fin",
+                                        "duree_s", "message", "resultat")}
+    try:
+        _ajouter_tache_hist(projet, record)
+    except Exception as e:
+        logger.warning(f"Archivage tâche {tache_id} : {e}")
 
 
-def _lancer_tache(projet_id, type_, mode="overwrite"):
+def _lancer_tache(projet_id, type_, mode="overwrite", projet_nom=""):
     """Crée une tâche et démarre son thread. Renvoie l'identifiant."""
     from datetime import datetime as _dtc
     etapes = list(_DOSSIER_COMPLET_ETAPES) if type_ == "dossier_complet" else [type_]
     tache_id = _uuid.uuid4().hex[:12]
     with _TACHES_LOCK:
-        # purge des tâches terminées (bornage mémoire)
+        # purge des tâches terminées (bornage mémoire — elles sont archivées en JSON)
         for k in [k for k, v in _TACHES.items() if v.get("statut") in ("termine", "erreur", "annule")]:
             _TACHES.pop(k, None)
         _TACHES[tache_id] = {
-            "id": tache_id, "projet_id": projet_id, "type": type_, "label": _label_tache(type_),
+            "id": tache_id, "projet_id": projet_id, "projet_nom": projet_nom,
+            "type": type_, "label": _label_tache(type_),
             "statut": "en_cours", "etape": _ETAPE_LABELS.get(etapes[0], etapes[0]),
             "etape_idx": 0, "nb_etapes": len(etapes),
-            "etapes": [{"key": k, "label": _ETAPE_LABELS.get(k, k), "statut": "en_attente"} for k in etapes],
+            "etapes": [{"key": k, "label": _ETAPE_LABELS.get(k, k), "statut": "en_attente", "duree_s": None}
+                       for k in etapes],
             "progression": 0, "debut": _dtc.now().isoformat(timespec="seconds"),
             "fin": None, "duree_s": None, "message": "", "resultat": {},
             "pause": False, "annuler": False,   # contrôles (pause/reprise/annulation)
@@ -463,7 +522,7 @@ async def api_lancer_tache(projet_id: int, request: Request, db: Session = Depen
     valides = set(_ETAPE_LABELS) | {"dossier_complet"}
     if type_ not in valides:
         raise HTTPException(status_code=400, detail=f"Type de génération inconnu : {type_}")
-    tache_id = _lancer_tache(projet_id, type_, mode)
+    tache_id = _lancer_tache(projet_id, type_, mode, projet_nom=projet.nom)
     return JSONResponse({"tache_id": tache_id, "label": _label_tache(type_),
                          "message": "Génération lancée en arrière-plan."})
 
@@ -491,33 +550,35 @@ def api_controler_tache(projet_id: int, tache_id: str, action: str, db: Session 
 
 
 @app.get("/api/projets/{projet_id}/historique")
-def api_historique(projet_id: int, limit: int = 100, db: Session = Depends(get_db)):
-    """Historique du projet : tâches actives (en mémoire, progression temps réel)
-    + événements journalisés (LogGeneration)."""
+def api_historique(projet_id: int, limit: int = 150, db: Session = Depends(get_db)):
+    """Historique de l'affaire : tâches actives (temps réel) + générations terminées
+    (cartes persistantes, vertes/rouges/grises)."""
     projet = crm_service.obtenir_projet(db, projet_id)
     if not projet:
         raise HTTPException(status_code=404, detail="Projet non trouvé")
-    actives = _snapshot_taches(projet_id)
-    logs = (db.query(models.LogGeneration)
-            .filter(models.LogGeneration.projet_id == projet_id)
-            .order_by(models.LogGeneration.date_generation.desc())
-            .limit(limit).all())
-    def _statut_ev(d):
-        s = str(d or "").lstrip()
-        if s.startswith("✗"):
-            return "erreur"
-        if s.startswith("⊘"):
-            return "annule"
-        return "succes"
-    evenements = [{
-        "id": lg.id,
-        "type_livrable": lg.type_livrable,
-        "details": lg.details or "",
-        "date": lg.date_generation.isoformat() if lg.date_generation else None,
-        "statut": _statut_ev(lg.details),
-        "succes": not str(lg.details or "").lstrip().startswith(("✗", "⊘")),
-    } for lg in logs]
-    return JSONResponse({"actives": actives, "evenements": evenements})
+    return JSONResponse({
+        "actives": _snapshot_taches(projet_id),
+        "terminees": _lire_taches_hist(projet)[:limit],
+    })
+
+
+@app.get("/api/historique")
+def api_historique_global(limit: int = 150, db: Session = Depends(get_db)):
+    """Historique GLOBAL (tous projets) : pour le tableau de bord admin —
+    générations en cours + terminées, tous projets confondus."""
+    with _TACHES_LOCK:
+        actives = [dict(v) for v in _TACHES.values()
+                   if v.get("statut") in ("en_cours", "en_attente", "en_pause")]
+    terminees = []
+    for p in crm_service.lister_projets(db):
+        for r in _lire_taches_hist(p):
+            r = dict(r)
+            r.setdefault("projet_nom", p.nom)
+            r["projet_id"] = p.id
+            terminees.append(r)
+    # tri par date de fin décroissante
+    terminees.sort(key=lambda r: r.get("fin") or "", reverse=True)
+    return JSONResponse({"actives": actives, "terminees": terminees[:limit]})
 
 
 @app.get("/projets/{projet_id}/historique", response_class=HTMLResponse)
@@ -1281,11 +1342,12 @@ def api_maj_longueurs(projet_id: int, db: Session = Depends(get_db)):
     rapport["conforme"] = (rapport["nb_ecrit"] == 0 and rapport["nb_anomalie"] == 0)
     if rapport["nb_ecrit"] > 0:
         _marquer_shapes_a_maj(projet)                  # MAJ Shapes obligatoire (livrables modifiés)
+        _msg_maj = (f"{rapport['nb_ecrit']} longueur(s) de support recalculée(s)"
+                    + (f" ; {rapport['nb_anomalie']} anomalie(s) câble" if rapport['nb_anomalie'] else ""))
         try:
-            crm_service.enregistrer_log(
-                db, projet.id, "Mise à jour des longueurs",
-                details=f"{rapport['nb_ecrit']} longueur(s) de support recalculée(s)"
-                        + (f" ; {rapport['nb_anomalie']} anomalie(s) câble" if rapport['nb_anomalie'] else ""))
+            crm_service.enregistrer_log(db, projet.id, "Mise à jour des longueurs", details=_msg_maj)
+            _carte_generation(projet, "maj_longueurs", "termine", _msg_maj,
+                              label="Mise à jour des longueurs")
         except Exception:
             pass
     logger.info(f"MAJ longueurs projet {projet_id} : {rapport['nb_ecrit']} support(s) écrit(s), "
@@ -2352,6 +2414,7 @@ def api_generer_etude(projet_id: int, type_etude: str, mode: str = "overwrite", 
     message = ""
 
     _GEN_LOCK.acquire()   # une seule génération à la fois (matplotlib non thread-safe)
+    _gen_t0 = _time.time()
     try:
         if type_etude == "doe_global":
             # Créer l'arborescence complète
@@ -2616,6 +2679,11 @@ def api_generer_etude(projet_id: int, type_etude: str, mode: str = "overwrite", 
             u = _url_statique(dest_kmz)
             if u:
                 reponse["kmz_url"] = u
+        # Génération SYNCHRONE (modal) : archiver une carte d'historique. Les appels
+        # depuis un thread de tâche (in_task) sont archivés par la tâche (agrégat).
+        if not getattr(_TASK_CTX, "in_task", False):
+            _carte_generation(projet, type_etude, "termine", message,
+                              duree_s=int(_time.time() - _gen_t0), path=dossier_global)
         return JSONResponse(reponse)
     except HTTPException:
         raise
