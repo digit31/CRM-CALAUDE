@@ -338,6 +338,9 @@ def calculer_synthese(dossier_shape: str, ref_projet: str = "", date_str: str = 
             "gc_ml": gc_ml, "gc_ch": 0,
             "vtl_ml": vtl_ml, "vtl_visible": vtl_visible,
             "total_ml": total_sout, "total_love_ml": total_sout_love,
+            # supplément additif du love (avant x1,05) — permet de recalculer le love
+            # côté Console quand l'utilisateur édite les longueurs.
+            "love_extra": comp_l5t_free + 20 * nb_boites_sout + 3 * ch["blo"],
         },
         "aerien": {
             "free_ml": aer["free"], "free_ap": aer_ap["free"],
@@ -346,6 +349,7 @@ def calculer_synthese(dossier_shape: str, ref_projet: str = "", date_str: str = 
             "tiers_nom": "", "tiers_ml": aer["tiers"], "tiers_ap": aer_ap["tiers"],
             "total_ml": total_aer, "total_ap": total_aer_ap,
             "total_love_ml": total_aer_love,
+            "love_extra": 20 * nb_boites_aer,
         },
         "appuis": appuis,
         "boites": {**boites, "total": total_boites},
@@ -373,8 +377,13 @@ def fusionner(defauts: dict, sauvegarde: dict) -> dict:
 # du SHP tout en préservant les saisies de l'utilisateur.
 _CHAMPS_MANUELS = {
     "cartouche": ("fait_par", "version"),
-    "souterrain": ("gc_ml", "gc_ch", "tiers_nom", "vtl_ml"),
-    "aerien": ("tiers_nom",),
+    # Réseaux souterrains + aériens : TOUTES les longueurs / appuis sont éditables
+    # et conservés (la saisie utilisateur l'emporte sur le calcul SHP). Les totaux
+    # (total_ml / total_ap / total_love_ml) restent dérivés (recalculés ci-dessous).
+    "souterrain": ("blo_ml", "blo_ch", "free_ml", "free_ch",
+                   "gc_ml", "gc_ch", "tiers_nom", "tiers_ml", "tiers_ch", "vtl_ml"),
+    "aerien": ("free_ml", "free_ap", "orange_ml", "orange_ap",
+               "enedis_ml", "enedis_ap", "tiers_nom", "tiers_ml", "tiers_ap"),
     "appuis": ("remplacer", "recaler"),
     "boites": ("ofdc", "tenio", "t1"),
 }
@@ -403,12 +412,23 @@ def fusionner_console(defauts: dict, sauvegarde: dict) -> dict:
                         out[sec][k] = src[k]
         if sauvegarde.get("infos") is not None:
             out["infos"] = sauvegarde["infos"]
-    # Totaux dépendant de champs manuels : recalcul après fusion.
+    # Totaux dérivés : TOUJOURS recalculés depuis les composantes (éditées ou auto),
+    # jamais figés par la sauvegarde. love = round((total + love_extra) x 1,05).
     s = out.get("souterrain")
     if isinstance(s, dict):
         vtl = _n0(s.get("vtl_ml")) if s.get("vtl_visible", True) else 0
-        s["total_ml"] = (_n0(s.get("blo_ml")) + _n0(s.get("free_ml"))
-                         + _n0(s.get("tiers_ml")) + _n0(s.get("gc_ml")) + vtl)
+        total = (_n0(s.get("blo_ml")) + _n0(s.get("free_ml"))
+                 + _n0(s.get("tiers_ml")) + _n0(s.get("gc_ml")) + vtl)
+        s["total_ml"] = total
+        s["total_love_ml"] = int(round((total + _n0(s.get("love_extra"))) * 1.05))
+    a = out.get("aerien")
+    if isinstance(a, dict):
+        total_a = (_n0(a.get("free_ml")) + _n0(a.get("orange_ml"))
+                   + _n0(a.get("enedis_ml")) + _n0(a.get("tiers_ml")))
+        a["total_ml"] = total_a
+        a["total_ap"] = (_n0(a.get("free_ap")) + _n0(a.get("orange_ap"))
+                         + _n0(a.get("enedis_ap")) + _n0(a.get("tiers_ap")))
+        a["total_love_ml"] = int(round((total_a + _n0(a.get("love_extra"))) * 1.05))
     b = out.get("boites")
     if isinstance(b, dict):
         b["total"] = sum(_n0(b.get(k)) for k in ("ofdc", "tenio", "t0", "t1"))
