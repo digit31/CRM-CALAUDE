@@ -124,10 +124,13 @@ def page_dashboard(request: Request, db: Session = Depends(get_db)):
     """Page d'accueil : Tableau de bord CRM avec la liste des projets."""
     projets = crm_service.lister_projets(db)
     clients = crm_service.lister_clients(db)
+    # Type d'étude (APD FO / DOE FO) par projet, pour l'afficher dans le tableau.
+    types_etude = {p.id: _type_etude_projet(p) for p in projets}
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
         "projets": projets,
         "clients": clients,
+        "types_etude": types_etude,
     })
 
 
