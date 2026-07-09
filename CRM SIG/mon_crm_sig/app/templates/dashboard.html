@@ -89,7 +89,7 @@ Tableau de Bord
                         <th class="px-6 py-3.5 font-semibold">Statut</th>
                         <th class="px-6 py-3.5 font-semibold">Couches SIG</th>
                         <th class="px-6 py-3.5 font-semibold">Date</th>
-                        <th class="px-6 py-3.5 font-semibold">Type d'étude</th>
+                        <th class="px-6 py-3.5 font-semibold whitespace-nowrap">Étude</th>
                         <th class="px-6 py-3.5 font-semibold text-right">Actions</th>
                     </tr>
                 </thead>
@@ -109,15 +109,15 @@ Tableau de Bord
                         <td class="px-6 py-4 text-sm text-slate-500">{{ projet.client.nom if projet.client else "—" }}</td>
                         <td class="px-6 py-4">
                             {% if projet.statut == "Nouveau" %}
-                            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-violet-100 text-violet-700">Nouveau</span>
+                            <span class="inline-flex items-center whitespace-nowrap px-2.5 py-1 rounded-full text-xs font-semibold bg-violet-100 text-violet-700">Nouveau</span>
                             {% elif projet.statut == "En cours" %}
-                            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">En cours</span>
+                            <span class="inline-flex items-center whitespace-nowrap px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">En cours</span>
                             {% elif projet.statut == "Terminé" %}
-                            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">Terminé</span>
+                            <span class="inline-flex items-center whitespace-nowrap px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">Terminé</span>
                             {% elif projet.statut == "Archivé" %}
-                            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600">Archivé</span>
+                            <span class="inline-flex items-center whitespace-nowrap px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600">Archivé</span>
                             {% else %}
-                            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600">{{ projet.statut }}</span>
+                            <span class="inline-flex items-center whitespace-nowrap px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600">{{ projet.statut }}</span>
                             {% endif %}
                         </td>
                         <td class="px-6 py-4">
