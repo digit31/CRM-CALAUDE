@@ -28,8 +28,18 @@
 
   <div id="console-form" class="hidden space-y-5">
 
+    <!-- ONGLETS (évite le scroll : une section à la fois) -->
+    <div id="console-tabs" class="flex flex-wrap gap-1.5 bg-white rounded-xl shadow-sm border border-slate-100 p-1.5">
+      <button type="button" class="console-tab is-active" data-target="cartouche" onclick="switchConsoleTab('cartouche')">Cartouche du plan</button>
+      <button type="button" class="console-tab" data-target="souterrain" onclick="switchConsoleTab('souterrain')">Réseaux souterrains</button>
+      <button type="button" class="console-tab" data-target="aerien" onclick="switchConsoleTab('aerien')">Réseaux aériens</button>
+      <button type="button" class="console-tab" data-target="boites" onclick="switchConsoleTab('boites')">Boîtes</button>
+      <button type="button" class="console-tab" data-target="infos" onclick="switchConsoleTab('infos')">Informations remarquables</button>
+      <button type="button" class="console-tab" data-target="doe" onclick="switchConsoleTab('doe')">DOE FO — Date TVX &amp; FCI</button>
+    </div>
+
     <!-- CARTOUCHE -->
-    <section class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+    <section id="pane-cartouche" data-pane="cartouche" class="console-pane bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
       <div class="px-5 py-3 bg-slate-50/80 border-b border-slate-100 font-semibold text-slate-700 text-sm">Cartouche du plan</div>
       <div class="p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
         <div><label class="lbl">Code projet du site</label><input class="inp" data-sec="cartouche" data-key="code_projet"></div>
@@ -44,7 +54,7 @@
     </section>
 
     <!-- SOUTERRAIN -->
-    <section class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+    <section id="pane-souterrain" data-pane="souterrain" class="console-pane hidden bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
       <div class="px-5 py-3 bg-slate-50/80 border-b border-slate-100 font-semibold text-slate-700 text-sm flex items-center justify-between">
         <span>Réseaux souterrains</span><span class="text-[11px] text-brand-600 font-normal">pré-rempli SHP · éditable · totaux Σ auto</span>
       </div>
@@ -85,7 +95,7 @@
     </section>
 
     <!-- AERIEN -->
-    <section class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+    <section id="pane-aerien" data-pane="aerien" class="console-pane hidden bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
       <div class="px-5 py-3 bg-slate-50/80 border-b border-slate-100 font-semibold text-slate-700 text-sm flex items-center justify-between">
         <span>Réseaux aériens</span><span class="text-[11px] text-brand-600 font-normal">pré-rempli SHP · éditable · totaux Σ auto</span>
       </div>
@@ -139,7 +149,7 @@
     </section>
 
     <!-- BOITES -->
-    <section class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+    <section id="pane-boites" data-pane="boites" class="console-pane hidden bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
       <div class="px-5 py-3 bg-slate-50/80 border-b border-slate-100 font-semibold text-slate-700 text-sm flex items-center justify-between">
         <span>Boîtes</span><span class="text-[11px] text-brand-600 font-normal">comptées depuis BPE (nouvelles)</span>
       </div>
@@ -153,7 +163,7 @@
     </section>
 
     <!-- INFOS -->
-    <section class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+    <section id="pane-infos" data-pane="infos" class="console-pane hidden bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
       <div class="px-5 py-3 bg-slate-50/80 border-b border-slate-100 font-semibold text-slate-700 text-sm">Informations remarquables</div>
       <div class="p-5">
         <textarea id="infos-txt" rows="4" class="inp" placeholder="Commentaires, points de vigilance, contraintes…"></textarea>
@@ -161,7 +171,7 @@
     </section>
 
     <!-- DOE FO : Date TVX + FCI par câble (verrouillé hors étude DOE FO) -->
-    <section class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+    <section id="pane-doe" data-pane="doe" class="console-pane hidden bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
       <div class="px-5 py-3 bg-slate-50/80 border-b border-slate-100 font-semibold text-slate-700 text-sm flex items-center justify-between">
         <span>DOE FO — Date TVX &amp; FCI par câble</span>
         {% if type_etude == 'DOE FO' %}
@@ -220,6 +230,9 @@
   .auto { display:inline-block; font-size:9px; font-weight:700; color:#0d9488; background:#f0fdfa; border:1px solid #99f6e4; border-radius:6px; padding:0 4px; margin-left:4px; }
   .calc { display:inline-block; font-size:9px; font-weight:700; color:#7c3aed; background:#f5f3ff; border:1px solid #ddd6fe; border-radius:6px; padding:0 4px; margin-left:4px; }
   .inp-total { background:#f8fafc; color:#0f172a; cursor:not-allowed; }
+  .console-tab { padding:8px 14px; font-size:12px; font-weight:600; border-radius:8px; color:#64748b; white-space:nowrap; transition:all .15s; cursor:pointer; }
+  .console-tab:hover { color:#334155; background:#f1f5f9; }
+  .console-tab.is-active, .console-tab.is-active:hover { background:#0d9488; color:#fff; box-shadow:0 1px 2px rgba(0,0,0,.05); }
 </style>
 <script>
   const projetId = {{ projet.id }};
@@ -261,6 +274,13 @@
         msg.textContent = 'Erreur : ' + err.message;
       });
     input.value = '';
+  }
+
+  // Bascule d'onglet : affiche le panneau ciblé, garde les autres dans le DOM
+  // (donc « Enregistrer » collecte toujours l'ensemble des sections).
+  function switchConsoleTab(name) {
+    document.querySelectorAll('.console-pane').forEach(p => p.classList.toggle('hidden', p.dataset.pane !== name));
+    document.querySelectorAll('.console-tab').forEach(b => b.classList.toggle('is-active', b.dataset.target === name));
   }
 
   function remplir(donnees) {
