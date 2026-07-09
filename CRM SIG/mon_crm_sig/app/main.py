@@ -305,15 +305,38 @@ def _snapshot_taches(projet_id):
     """Tâches ACTIVES (en cours/attente) du projet, copie pour lecture concurrente."""
     with _TACHES_LOCK:
         return [dict(v) for v in _TACHES.values()
-                if v.get("projet_id") == projet_id and v.get("statut") in ("en_cours", "en_attente")]
+                if v.get("projet_id") == projet_id and v.get("statut") in ("en_cours", "en_attente", "en_pause")]
+
+
+def _tache_flag(tache_id, flag):
+    with _TACHES_LOCK:
+        t = _TACHES.get(tache_id)
+        return bool(t and t.get(flag))
+
+
+def _maj_tache(tache_id, **kw):
+    with _TACHES_LOCK:
+        t = _TACHES.get(tache_id)
+        if t:
+            t.update(kw)
+
+
+def _shp_livrable_existe(projet):
+    """True si des SHP livrables existent déjà (pour sauter une régénération inutile)."""
+    import glob as _g
+    d = _trouver_dossier_shape(projet)
+    return bool(d and os.path.isdir(d) and _g.glob(os.path.join(d, "*.shp")))
 
 
 def _executer_tache(tache_id, projet_id, etapes, mode):
-    """Thread : exécute les étapes de génération en séquence, met à jour la
-    progression, et journalise (LogGeneration) — les erreurs y sont consignées
-    (le succès de chaque étape est déjà journalisé par api_generer_etude)."""
+    """Thread : exécute les étapes de génération en séquence. Gère PAUSE / REPRISE /
+    ANNULATION aux frontières d'étape (une étape lourde ne peut être interrompue en
+    cours). Met à jour la progression, journalise le résultat (LogGeneration).
+
+    Optimisation : le pas « shape » est SAUTÉ si les SHP livrables existent déjà et
+    qu'aucune MAJ n'est en attente (évite une régénération inutile + préserve les
+    éditions livrables) — comme le stepper frontend."""
     import json as _json
-    from datetime import datetime as _dtc
     from app.database import SessionLocal
     db = SessionLocal()
     t0 = _time.time()
@@ -323,36 +346,53 @@ def _executer_tache(tache_id, projet_id, etapes, mode):
         if not projet:
             return
         nb = max(1, len(etapes))
-        with _GEN_LOCK:                         # une génération à la fois
-            for i, key in enumerate(etapes):
-                with _TACHES_LOCK:
-                    t = _TACHES.get(tache_id)
-                    if t is None:
-                        return
-                    t["etape_idx"] = i
-                    t["etape"] = _ETAPE_LABELS.get(key, key)
-                    t["progression"] = int(i * 100 / nb)
-                    t["etapes"][i]["statut"] = "en_cours"
-                try:
-                    resp = api_generer_etude(projet_id, key, mode, db=db)
-                    dernier = _json.loads(getattr(resp, "body", b"{}") or b"{}")
-                    with _TACHES_LOCK:
-                        if tache_id in _TACHES:
-                            _TACHES[tache_id]["etapes"][i]["statut"] = "termine"
-                            _TACHES[tache_id]["resultat"] = dernier
-                except Exception as e:
-                    detail = e.detail if isinstance(e, HTTPException) else str(e)
-                    logger.error(f"Tâche {tache_id} étape {key} : {detail}")
-                    with _TACHES_LOCK:
-                        if tache_id in _TACHES:
-                            _TACHES[tache_id]["etapes"][i]["statut"] = "erreur"
-                    _finir_tache(tache_id, projet, "erreur",
-                                 f"{_ETAPE_LABELS.get(key, key)} : {detail}", t0, journaliser=True)
+        for i, key in enumerate(etapes):
+            # --- contrôle entre étapes : pause puis annulation ---
+            while _tache_flag(tache_id, "pause") and not _tache_flag(tache_id, "annuler"):
+                _maj_tache(tache_id, statut="en_pause")
+                _time.sleep(0.4)
+            if _tache_flag(tache_id, "annuler") or tache_id not in _TACHES:
+                _finir_tache(tache_id, projet, "annule", "Génération annulée.", t0, journaliser=True)
+                return
+            with _TACHES_LOCK:
+                t = _TACHES.get(tache_id)
+                if t is None:
                     return
+                t["statut"] = "en_cours"
+                t["etape_idx"] = i
+                t["etape"] = _ETAPE_LABELS.get(key, key)
+                t["progression"] = int(i * 100 / nb)
+                t["etapes"][i]["statut"] = "en_cours"
+            # Optimisation : dans un dossier complet, sauter « shape » si déjà à jour
+            # (livrables présents, pas de MAJ en attente). Une demande « shape » seule
+            # (nb=1) régénère toujours.
+            if key == "shape" and nb > 1 and not _shapes_a_maj(projet) and _shp_livrable_existe(projet):
+                _maj_tache_etape(tache_id, i, "ignore")
+                continue
+            try:
+                resp = api_generer_etude(projet_id, key, mode, db=db)
+                dernier = _json.loads(getattr(resp, "body", b"{}") or b"{}")
+                _maj_tache_etape(tache_id, i, "termine", resultat=dernier)
+            except Exception as e:
+                detail = e.detail if isinstance(e, HTTPException) else str(e)
+                logger.error(f"Tâche {tache_id} étape {key} : {detail}")
+                _maj_tache_etape(tache_id, i, "erreur")
+                _finir_tache(tache_id, projet, "erreur",
+                             f"{_ETAPE_LABELS.get(key, key)} : {detail}", t0, journaliser=True)
+                return
         _finir_tache(tache_id, projet, "termine",
                      dernier.get("message", "Génération terminée."), t0, journaliser=False)
     finally:
         db.close()
+
+
+def _maj_tache_etape(tache_id, i, statut, resultat=None):
+    with _TACHES_LOCK:
+        t = _TACHES.get(tache_id)
+        if t:
+            t["etapes"][i]["statut"] = statut
+            if resultat is not None:
+                t["resultat"] = resultat
 
 
 def _finir_tache(tache_id, projet, statut, message, t0, journaliser):
@@ -370,12 +410,13 @@ def _finir_tache(tache_id, projet, statut, message, t0, journaliser):
             t["duree_s"] = duree
             t["message"] = message
     if journaliser:
+        prefixe = "⊘ ANNULÉE —" if statut == "annule" else "✗ ÉCHEC —"
         try:
             from app.database import SessionLocal
             dbx = SessionLocal()
             try:
                 crm_service.enregistrer_log(dbx, projet.id, f"{label} (arrière-plan)",
-                                            details=f"✗ ÉCHEC — {message} ({duree}s)")
+                                            details=f"{prefixe} {message} ({duree}s)")
             finally:
                 dbx.close()
         except Exception as e:
@@ -389,7 +430,7 @@ def _lancer_tache(projet_id, type_, mode="overwrite"):
     tache_id = _uuid.uuid4().hex[:12]
     with _TACHES_LOCK:
         # purge des tâches terminées (bornage mémoire)
-        for k in [k for k, v in _TACHES.items() if v.get("statut") in ("termine", "erreur")]:
+        for k in [k for k, v in _TACHES.items() if v.get("statut") in ("termine", "erreur", "annule")]:
             _TACHES.pop(k, None)
         _TACHES[tache_id] = {
             "id": tache_id, "projet_id": projet_id, "type": type_, "label": _label_tache(type_),
@@ -398,6 +439,7 @@ def _lancer_tache(projet_id, type_, mode="overwrite"):
             "etapes": [{"key": k, "label": _ETAPE_LABELS.get(k, k), "statut": "en_attente"} for k in etapes],
             "progression": 0, "debut": _dtc.now().isoformat(timespec="seconds"),
             "fin": None, "duree_s": None, "message": "", "resultat": {},
+            "pause": False, "annuler": False,   # contrôles (pause/reprise/annulation)
         }
     th = _threading.Thread(target=_executer_tache, args=(tache_id, projet_id, etapes, mode), daemon=True)
     th.start()
@@ -426,6 +468,28 @@ async def api_lancer_tache(projet_id: int, request: Request, db: Session = Depen
                          "message": "Génération lancée en arrière-plan."})
 
 
+@app.post("/api/projets/{projet_id}/taches/{tache_id}/{action}")
+def api_controler_tache(projet_id: int, tache_id: str, action: str, db: Session = Depends(get_db)):
+    """Contrôle une tâche en arrière-plan : pause / reprendre / annuler. L'effet a
+    lieu à la frontière d'étape (l'étape en cours va à son terme)."""
+    if action not in ("pause", "reprendre", "annuler"):
+        raise HTTPException(status_code=400, detail="Action inconnue.")
+    with _TACHES_LOCK:
+        t = _TACHES.get(tache_id)
+        if not t or t.get("projet_id") != projet_id:
+            raise HTTPException(status_code=404, detail="Tâche introuvable ou déjà terminée.")
+        if t.get("statut") in ("termine", "erreur", "annule"):
+            raise HTTPException(status_code=400, detail="Tâche déjà terminée.")
+        if action == "pause":
+            t["pause"] = True
+        elif action == "reprendre":
+            t["pause"] = False
+        elif action == "annuler":
+            t["annuler"] = True
+            t["pause"] = False
+    return JSONResponse({"message": "ok", "action": action})
+
+
 @app.get("/api/projets/{projet_id}/historique")
 def api_historique(projet_id: int, limit: int = 100, db: Session = Depends(get_db)):
     """Historique du projet : tâches actives (en mémoire, progression temps réel)
@@ -438,12 +502,20 @@ def api_historique(projet_id: int, limit: int = 100, db: Session = Depends(get_d
             .filter(models.LogGeneration.projet_id == projet_id)
             .order_by(models.LogGeneration.date_generation.desc())
             .limit(limit).all())
+    def _statut_ev(d):
+        s = str(d or "").lstrip()
+        if s.startswith("✗"):
+            return "erreur"
+        if s.startswith("⊘"):
+            return "annule"
+        return "succes"
     evenements = [{
         "id": lg.id,
         "type_livrable": lg.type_livrable,
         "details": lg.details or "",
         "date": lg.date_generation.isoformat() if lg.date_generation else None,
-        "succes": not str(lg.details or "").lstrip().startswith("✗"),
+        "statut": _statut_ev(lg.details),
+        "succes": not str(lg.details or "").lstrip().startswith(("✗", "⊘")),
     } for lg in logs]
     return JSONResponse({"actives": actives, "evenements": evenements})
 

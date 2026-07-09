@@ -81,7 +81,15 @@
     en_cours:   '<svg class="h-3.5 w-3.5 text-amber-500 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z"></path></svg>',
     termine:    '<svg class="h-3.5 w-3.5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>',
     erreur:     '<svg class="h-3.5 w-3.5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>',
+    ignore:     '<svg class="h-3.5 w-3.5 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14"/></svg>',
   };
+
+  function ctrlTache(id, action) {
+    fetch('/api/projets/' + projetId + '/taches/' + id + '/' + action, { method: 'POST' })
+      .then(r => r.json().then(d => ({ ok: r.ok, d })))
+      .then(({ ok, d }) => { if (!ok) toast(d.detail || 'Action impossible', 'error'); charger(); })
+      .catch(() => {});
+  }
 
   function rendActives(actives){
     const sec = document.getElementById('sec-actives');
@@ -89,24 +97,39 @@
     if(!actives.length){ sec.classList.add('hidden'); box.innerHTML=''; return; }
     sec.classList.remove('hidden');
     box.innerHTML = actives.map(t => {
+      const paused = t.statut === 'en_pause';
+      const stCls = (st) => st==='en_cours'?'text-amber-700 font-semibold':st==='termine'?'text-slate-500':st==='erreur'?'text-red-600':st==='ignore'?'text-slate-400 line-through':'text-slate-400';
       const etapes = (t.etapes||[]).map(e =>
-        '<div class="flex items-center gap-2 text-xs '+(e.statut==='en_cours'?'text-amber-700 font-semibold':e.statut==='termine'?'text-slate-500':e.statut==='erreur'?'text-red-600':'text-slate-400')+'">'
-        + (_ETAPE_ICONE[e.statut]||_ETAPE_ICONE.en_attente) + '<span>'+esc(e.label)+'</span></div>').join('');
+        '<div class="flex items-center gap-2 text-xs '+stCls(e.statut)+'">'
+        + (_ETAPE_ICONE[e.statut]||_ETAPE_ICONE.en_attente) + '<span>'+esc(e.label)+(e.statut==='ignore'?' (déjà à jour)':'')+'</span></div>').join('');
       const prog = Math.max(2, Math.min(100, t.progression||0));
       const multi = (t.nb_etapes||1) > 1;
-      // multi-étapes : barre déterminée (avancement par étape) ; mono-étape : barre indéterminée
-      const barre = multi
-        ? '<div class="h-2 w-full bg-slate-100 rounded-full overflow-hidden mb-3"><div class="h-full bg-amber-500 rounded-full transition-all duration-500" style="width:'+prog+'%"></div></div>'
+      const barColor = paused ? 'bg-slate-400' : 'bg-amber-500';
+      // multi-étapes : barre déterminée ; mono-étape : barre indéterminée (sauf en pause = figée)
+      const barre = (multi || paused)
+        ? '<div class="h-2 w-full bg-slate-100 rounded-full overflow-hidden mb-3"><div class="h-full '+barColor+' rounded-full transition-all duration-500" style="width:'+prog+'%"></div></div>'
         : '<div class="h-2 w-full bg-slate-100 rounded-full overflow-hidden mb-3"><div class="bar-indet h-full bg-amber-500"></div></div>';
+      const sousTitre = paused
+        ? '<span class="inline-flex items-center gap-1 text-slate-500 font-semibold"><svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 9v6m4-6v6"/></svg>En pause</span>'
+        : esc(t.etape||'') + (multi ? ' · étape '+((t.etape_idx||0)+1)+'/'+t.nb_etapes : '');
+      const controls =
+          '<div class="flex gap-2 mt-3 pt-3 border-t border-slate-100">'
+        + (paused
+            ? '<button onclick="ctrlTache(\''+t.id+'\',\'reprendre\')" class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition"><svg class="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>Reprendre</button>'
+            : '<button onclick="ctrlTache(\''+t.id+'\',\'pause\')" class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition"><svg class="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>Pause</button>')
+        + '<button onclick="ctrlTache(\''+t.id+'\',\'annuler\')" class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition"><svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>Annuler</button>'
+        + '<span class="ml-auto text-[10px] text-slate-400 self-center">agit à la fin de l\'étape en cours</span>'
+        + '</div>';
       return ''
-        + '<div class="bg-white rounded-xl border border-amber-200 shadow-sm p-4">'
+        + '<div class="bg-white rounded-xl border '+(paused?'border-slate-200':'border-amber-200')+' shadow-sm p-4">'
         +   '<div class="flex items-start justify-between gap-3 mb-2">'
         +     '<div><p class="font-semibold text-slate-800 text-sm">'+esc(t.label)+'</p>'
-        +       '<p class="text-xs text-amber-600 mt-0.5">'+esc(t.etape||'')+(multi? ' · étape '+((t.etape_idx||0)+1)+'/'+t.nb_etapes : '')+'</p></div>'
+        +       '<p class="text-xs '+(paused?'':'text-amber-600')+' mt-0.5">'+sousTitre+'</p></div>'
         +     '<span class="text-xs font-mono text-slate-400" data-debut="'+esc(t.debut)+'">'+elapsed(t.debut)+'</span>'
         +   '</div>'
         +   barre
         +   (multi ? '<div class="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-1.5">'+etapes+'</div>' : '')
+        +   controls
         + '</div>';
     }).join('');
   }
@@ -128,8 +151,11 @@
     if(!evs.length){ box.innerHTML=''; vide.classList.remove('hidden'); return; }
     vide.classList.add('hidden');
     box.innerHTML = evs.map(e => {
-      const ic = e.succes
+      const st = e.statut || (e.succes ? 'succes' : 'erreur');
+      const ic = st === 'succes'
         ? '<div class="mt-0.5 flex-shrink-0 h-8 w-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center"><svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg></div>'
+        : st === 'annule'
+        ? '<div class="mt-0.5 flex-shrink-0 h-8 w-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center"><svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 5.636L5.636 18.364M12 21a9 9 0 110-18 9 9 0 010 18z"/></svg></div>'
         : '<div class="mt-0.5 flex-shrink-0 h-8 w-8 rounded-lg bg-red-50 text-red-600 flex items-center justify-center"><svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>';
       return ''
         + '<div class="flex items-start gap-3 px-5 py-3 hover:bg-slate-50/60 transition">'
