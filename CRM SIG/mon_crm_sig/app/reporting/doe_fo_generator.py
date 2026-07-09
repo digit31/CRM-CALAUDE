@@ -201,7 +201,10 @@ def generer_doe_netgeo(dossier_input, dossier_template, dossier_sortie,
         g = g[champs + ["geometry"]]
         if crs_cible is not None:
             try:
-                g = g.set_crs(crs_cible, allow_override=True)
+                if g.crs is None:
+                    g = g.set_crs(crs_cible)               # input sans .prj -> on étiquette
+                elif g.crs != crs_cible:
+                    g = g.to_crs(crs_cible)                # input dans un autre CRS -> REPROJETER
             except Exception:
                 pass
         g.to_file(dest, encoding="utf-8")

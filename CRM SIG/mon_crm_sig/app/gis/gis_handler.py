@@ -64,10 +64,13 @@ def verifier_projection(gdf: gpd.GeoDataFrame, epsg_cible: int = 4326) -> gpd.Ge
     Returns:
         Le GeoDataFrame reprojeté si nécessaire.
     """
+    CRS_METIER = 2154   # Lambert-93 : CRS des SHP livrables ; défaut si .prj manquant
     if gdf.crs is None:
-        logger.warning("Aucune projection définie (fichier .prj manquant ?). "
-                        "WGS84 (EPSG:4326) sera utilisé par défaut.")
-        gdf.set_crs(epsg=epsg_cible, inplace=True)
+        logger.warning("Aucune projection définie (.prj manquant ?) : Lambert-93 "
+                       f"(EPSG:{CRS_METIER}) supposé, puis reprojection vers EPSG:{epsg_cible}.")
+        gdf = gdf.set_crs(epsg=CRS_METIER)
+        if CRS_METIER != epsg_cible:
+            gdf = gdf.to_crs(epsg=epsg_cible)
     elif gdf.crs.to_epsg() != epsg_cible:
         crs_original = gdf.crs.to_epsg()
         gdf = gdf.to_crs(epsg=epsg_cible)
@@ -192,7 +195,10 @@ def generer_livrables_shp(dossier_modele: str, dossier_input: str, dossier_sorti
         
         if os.path.exists(chemin_input_possible):
             try:
-                gdf_input = gpd.read_file(chemin_input_possible)
+                try:
+                    gdf_input = gpd.read_file(chemin_input_possible)
+                except UnicodeDecodeError:                      # DBF Latin-1 accentué
+                    gdf_input = gpd.read_file(chemin_input_possible, encoding="latin-1")
                 # Aligner le schéma : on garde les colonnes de gdf_input qui existent dans le modèle
                 # Et on ajoute les colonnes du modèle qui n'existent pas dans l'input (avec valeurs vides)
                 
@@ -219,9 +225,10 @@ def generer_livrables_shp(dossier_modele: str, dossier_input: str, dossier_sorti
                         gdf_livrable = gdf_livrable.to_crs(gdf_modele.crs)
                     
             except Exception as e:
+                # NE PAS produire un livrable VIDE en silence (perte de données :
+                # le SHP livrable est la source de vérité PDS/KMZ/carte). On propage.
                 logger.error(f"Erreur fusion {nom_fichier} : {str(e)}")
-                # En cas d'erreur on crée un vide
-                gdf_livrable = gdf_modele.iloc[0:0].copy()
+                raise
         else:
             # Créer un fichier vide
             gdf_livrable = gdf_modele.iloc[0:0].copy()
@@ -281,8 +288,9 @@ def generer_livrables_kmz(src_dir: str, dest_kmz: str) -> None:
             enc = get_encoding(dbf_file) if os.path.exists(dbf_file) else 'utf-8'
             
             gdf = gpd.read_file(matched_file, encoding=enc)
-            if gdf.crs is not None:
-                gdf = gdf.to_crs(epsg=4326)
+            if gdf.crs is None:
+                gdf = gdf.set_crs(epsg=2154)      # .prj manquant -> Lambert-93 supposé
+            gdf = gdf.to_crs(epsg=4326)
             
             folder = kml.newfolder(name=layer_name)
             
@@ -461,6 +469,13 @@ def construire_cables(support_gdf, bpe_gdf, bts_gdf=None, modele_cables_gdf=None
         return _cables_vide(modele_cables_gdf, support_gdf.crs if support_gdf is not None else None)
 
     support_gdf = support_gdf.reset_index(drop=True)
+    # Normaliser les tronçons multi-parties (MultiLineString) en LineString :
+    # sinon geom.coords lève NotImplementedError plus bas (graphe / fusion).
+    try:
+        if (support_gdf.geometry.geom_type == "MultiLineString").any():
+            support_gdf = support_gdf.explode(index_parts=False).reset_index(drop=True)
+    except Exception as _e:
+        logger.warning(f"Normalisation SUPPORT (explode) ignorée : {_e}")
     crs = support_gdf.crs
 
     def _harmoniser(gdf):

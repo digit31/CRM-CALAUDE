@@ -214,9 +214,9 @@ def associer_pt(pt_gdf, annexes, tol_m=12.0):
     restants = dict(annexes)
     for idx, row in poteaux:
         for cand in _nums_candidats(row):
-            if cand in annexes:
-                assoc[idx] = cand
-                restants.pop(cand, None)
+            if cand in restants:              # tester/consommer restants (pas annexes) :
+                assoc[idx] = cand             # sinon un même appui s'associe à plusieurs PT
+                restants.pop(cand, None)      # -> NOM/CODE dupliqués dans le livrable
                 break
 
     # 2) par géolocalisation (appuis restants avec lat/lon)

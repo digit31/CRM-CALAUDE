@@ -353,10 +353,13 @@
           box.innerHTML = '<span class="text-slate-400 text-xs">Aucun câble dans l\'input (importez d\'abord les couches).</span>';
           return;
         }
+        // Échappement HTML (anti-XSS + data-nom cassé si le nom contient un guillemet).
+        // Le round-trip &quot; -> " via inp.dataset.nom conserve la bonne clé FCI.
+        const esc = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         box.innerHTML = d.cables.map(c =>
           '<label class="flex items-center gap-2 px-1 py-1">'
-          + '<span class="font-mono text-xs flex-1 truncate" title="' + c.nom + '">' + c.nom + '</span>'
-          + '<input type="text" class="fci-inp" data-nom="' + c.nom + '" value="' + (c.fci || '') + '" placeholder="N° FCI"></label>').join('');
+          + '<span class="font-mono text-xs flex-1 truncate" title="' + esc(c.nom) + '">' + esc(c.nom) + '</span>'
+          + '<input type="text" class="fci-inp" data-nom="' + esc(c.nom) + '" value="' + esc(c.fci || '') + '" placeholder="N° FCI"></label>').join('');
       })
       .catch(() => {});
   }

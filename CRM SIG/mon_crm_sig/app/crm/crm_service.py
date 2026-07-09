@@ -13,9 +13,11 @@ PRINCIPE D'INDÉPENDANCE :
 """
 
 import os
+import re
 import logging
 from datetime import datetime
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from app import models
 from app.database import PROJECTS_DATA_DIR
 
@@ -61,8 +63,10 @@ def creer_dossier_projet(projet_id: int, nom_projet: str) -> str:
     Crée l'arborescence physique sur le disque dur pour un nouveau projet.
     Retourne le chemin absolu vers le dossier racine du projet.
     """
-    # Nom de dossier sécurisé (pas d'espaces, pas de caractères spéciaux)
-    nom_dossier = f"{projet_id:04d}_{nom_projet.replace(' ', '_')}"
+    # Nom de dossier sécurisé : whitelist stricte (évite les caractères interdits
+    # Windows \ / : * ? " < > | qui feraient échouer os.makedirs), tronqué.
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", nom_projet or "").strip("_") or "projet"
+    nom_dossier = f"{projet_id:04d}_{safe[:60]}"
     chemin_base = os.path.join(PROJECTS_DATA_DIR, nom_dossier)
 
     for dossier in SOUS_DOSSIERS_PROJET:
@@ -78,32 +82,46 @@ def creer_projet(db: Session, nom: str, description: str = "", client_id: int = 
     Crée un nouveau projet dans la base de données ET génère
     automatiquement le dossier physique avec ses sous-dossiers.
     """
+    # 1) Persister la ligne (référence UNIQUE) avec retry : deux créations
+    #    concurrentes peuvent calculer la même référence -> IntegrityError -> on
+    #    régénère et on réessaie au lieu d'un 500.
+    nouveau_projet = None
+    for tentative in range(5):
+        try:
+            reference = generer_reference(db)
+            nouveau_projet = models.Projet(
+                nom=nom, reference=reference, description=description,
+                client_id=client_id, chemin_dossier="",
+            )
+            db.add(nouveau_projet)
+            db.commit()
+            db.refresh(nouveau_projet)
+            break
+        except IntegrityError:
+            db.rollback()
+            nouveau_projet = None
+            logger.warning(f"Collision de référence à la création de '{nom}' "
+                           f"(tentative {tentative + 1}), nouvel essai…")
+    if nouveau_projet is None:
+        raise RuntimeError(f"Impossible de générer une référence unique pour '{nom}'.")
+
+    # 2) Créer le dossier APRÈS le commit ; si ça échoue, supprimer la ligne
+    #    (pas de projet orphelin avec chemin_dossier vide).
     try:
-        reference = generer_reference(db)
-
-        nouveau_projet = models.Projet(
-            nom=nom,
-            reference=reference,
-            description=description,
-            client_id=client_id,
-            chemin_dossier=""  # Sera mis à jour après pour avoir l'ID
-        )
-        db.add(nouveau_projet)
-        db.commit()
-        db.refresh(nouveau_projet)
-
-        # Créer le dossier physique maintenant qu'on a l'ID
         chemin_dossier = creer_dossier_projet(nouveau_projet.id, nom)
         nouveau_projet.chemin_dossier = chemin_dossier
         db.commit()
         db.refresh(nouveau_projet)
-
         logger.info(f"Projet créé : {reference} - '{nom}' -> {chemin_dossier}")
         return nouveau_projet
-
     except Exception as e:
-        db.rollback()
-        logger.error(f"Erreur lors de la création du projet '{nom}': {str(e)}")
+        logger.error(f"Création du dossier du projet '{nom}' échouée : {e} — "
+                     "suppression de la ligne pour éviter un orphelin.")
+        try:
+            db.delete(nouveau_projet)
+            db.commit()
+        except Exception:
+            db.rollback()
         raise
 
 

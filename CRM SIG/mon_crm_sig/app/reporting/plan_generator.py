@@ -121,6 +121,9 @@ def _lire(dossier, nom):
         return None
     try:
         g = gpd.read_file(p)
+        # écarter les géométries nulles/vides : sinon total_bounds = NaN -> set_xlim plante
+        if "geometry" in g.columns:
+            g = g[g.geometry.notna() & ~g.geometry.is_empty]
         return g if len(g) else None
     except Exception as e:
         logger.warning(f"Plan : lecture {nom}.shp impossible ({e})")
@@ -408,6 +411,7 @@ def generer_plan_syno(dossier_shape: str, chemin_pdf: str,
 
     # --- Page A3 (paysage par défaut, comme le livrable client) ---
     l_mm, h_mm = (420, 297) if orientation != "portrait" else (297, 420)
+    plt.close("all")   # borne la fuite de figures (run précédent échoué)
     fig = plt.figure(figsize=(l_mm * MM, h_mm * MM))
 
     cart_h = 23.0  # hauteur du cartouche (gabarit QGIS : 23 mm)
@@ -427,7 +431,13 @@ def generer_plan_syno(dossier_shape: str, chemin_pdf: str,
         bornes = b if bornes is None else (min(bornes[0], b[0]), min(bornes[1], b[1]),
                                            max(bornes[2], b[2]), max(bornes[3], b[3]))
     if bornes is None:
-        bornes = couches["COMMUNE"].total_bounds
+        for _n in ("COMMUNE", "NRA", "NRO_RIP"):   # dernier recours : couche géolocalisée
+            _g = couches.get(_n)
+            if _g is not None:
+                bornes = _g.total_bounds
+                break
+        if bornes is None:
+            raise ValueError("Aucune couche géolocalisable pour cadrer le plan.")
     x0, y0, x1, y1 = bornes
     dx, dy = max(x1 - x0, 50), max(y1 - y0, 50)
     x0, x1 = x0 - dx * 0.10, x1 + dx * 0.10
@@ -880,6 +890,7 @@ def generer_plan_apd(dossier_shape: str, chemin_pdf: str,
             couches[n] = g
 
     l_mm, h_mm = (297, 210) if orientation != "portrait" else (210, 297)
+    plt.close("all")   # borne la fuite de figures (run précédent échoué)
     fig = plt.figure(figsize=(l_mm * MM, h_mm * MM))
 
     marge = 3.0
@@ -899,7 +910,13 @@ def generer_plan_apd(dossier_shape: str, chemin_pdf: str,
         bornes = b if bornes is None else (min(bornes[0], b[0]), min(bornes[1], b[1]),
                                            max(bornes[2], b[2]), max(bornes[3], b[3]))
     if bornes is None:
-        bornes = couches["COMMUNE"].total_bounds
+        for _n in ("COMMUNE", "NRA", "NRO_RIP"):   # dernier recours : couche géolocalisée
+            _g = couches.get(_n)
+            if _g is not None:
+                bornes = _g.total_bounds
+                break
+        if bornes is None:
+            raise ValueError("Aucune couche géolocalisable pour cadrer le plan.")
     x0, y0, x1, y1 = bornes
     dx, dy = max(x1 - x0, 50), max(y1 - y0, 50)
     x0, x1 = x0 - dx * 0.12, x1 + dx * 0.12
@@ -1058,8 +1075,14 @@ def _emprise(couches, cles=("CABLES", "SUPPORT", "BPE", "BTS", "PT"), marge=0.05
         t = g.total_bounds
         b = t if b is None else (min(b[0], t[0]), min(b[1], t[1]),
                                  max(b[2], t[2]), max(b[3], t[3]))
-    if b is None and couches.get("COMMUNE") is not None:
-        b = couches["COMMUNE"].total_bounds
+    if b is None:
+        for _n in ("COMMUNE", "NRA", "NRO_RIP"):   # dernier recours : couche géolocalisée
+            _g = couches.get(_n)
+            if _g is not None:
+                b = _g.total_bounds
+                break
+        if b is None:
+            raise ValueError("Aucune couche géolocalisable pour cadrer les folios.")
     x0, y0, x1, y1 = b
     dx, dy = max(x1 - x0, 50), max(y1 - y0, 50)
     return (x0 - dx * marge, y0 - dy * marge, x1 + dx * marge, y1 + dy * marge)
@@ -1408,13 +1431,20 @@ def generer_folios_apd(dossier_shape: str, chemin_pdf: str, folios_shp: str = No
         opacite = 1.0
     emprise_glob = _emprise(couches)
 
-    os.makedirs(os.path.dirname(chemin_pdf), exist_ok=True)
+    os.makedirs(os.path.dirname(chemin_pdf) or ".", exist_ok=True)
+    plt.close("all")   # évite l'accumulation de figures laissées par un run précédent échoué
     with PdfPages(chemin_pdf) as pdf:
         fig = _page_ensemble(couches, folios, titre, natures=natures, code_projet=code_projet)
-        pdf.savefig(fig, dpi=300); plt.close(fig)
+        try:
+            pdf.savefig(fig, dpi=300)
+        finally:
+            plt.close(fig)
         for i, (fid, ext) in enumerate(folios, 1):
             fig = _page_folio(couches, folios, ext, i, len(folios), emprise_glob, titre,
                               natures=natures, code_projet=code_projet, opacite=opacite)
-            pdf.savefig(fig, dpi=300); plt.close(fig)
+            try:
+                pdf.savefig(fig, dpi=300)
+            finally:
+                plt.close(fig)
     logger.info(f"Folios APD générés ({len(folios) + 1} pages) : {chemin_pdf}")
     return chemin_pdf

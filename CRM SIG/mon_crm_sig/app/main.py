@@ -1128,23 +1128,30 @@ async def api_upload_shapefile(
             gdf = gis_handler.lire_shapefile(chemin_shp)
             metadonnees = gis_handler.extraire_metadonnees(gdf)
 
-            # Attribuer une couleur différente à chaque couche
-            couleur_index = (couches_existantes + nb_couches_ok) % len(COULEURS)
-
-            nouvelle_couche = models.CoucheSIG(
-                nom=os.path.splitext(os.path.basename(chemin_shp))[0],
-                type_geometrie=metadonnees["types_geometrie"][0] if metadonnees["types_geometrie"] else "Inconnu",
-                chemin_fichier=chemin_shp,
-                systeme_projection=str(metadonnees["crs"]) if metadonnees["crs"] else "4326",
-                nb_entites=metadonnees["nb_entites"],
-                couleur=COULEURS[couleur_index],
-                projet_id=projet_id
-            )
-            db.add(nouvelle_couche)
+            nom_couche = os.path.splitext(os.path.basename(chemin_shp))[0]
+            type_geom = metadonnees["types_geometrie"][0] if metadonnees["types_geometrie"] else "Inconnu"
+            crs = str(metadonnees["crs"]) if metadonnees["crs"] else "4326"
+            # Ré-import de la MÊME couche (même nom) : mise à jour au lieu de créer
+            # un doublon (sinon couche affichée en double + comptes faussés).
+            existante = db.query(models.CoucheSIG).filter(
+                models.CoucheSIG.projet_id == projet_id,
+                models.CoucheSIG.nom == nom_couche,
+            ).first()
+            if existante is not None:
+                existante.type_geometrie = type_geom
+                existante.chemin_fichier = chemin_shp
+                existante.systeme_projection = crs
+                existante.nb_entites = metadonnees["nb_entites"]
+            else:
+                db.add(models.CoucheSIG(
+                    nom=nom_couche, type_geometrie=type_geom, chemin_fichier=chemin_shp,
+                    systeme_projection=crs, nb_entites=metadonnees["nb_entites"],
+                    couleur=COULEURS[(couches_existantes + nb_couches_ok) % len(COULEURS)],
+                    projet_id=projet_id,
+                ))
             db.commit()
             nb_couches_ok += 1
-            logger.info(f"Couche SIG enregistrée : {nouvelle_couche.nom} "
-                        f"({metadonnees['nb_entites']} entités, couleur={COULEURS[couleur_index]})")
+            logger.info(f"Couche SIG enregistrée : {nom_couche} ({metadonnees['nb_entites']} entités)")
 
         except Exception as e:
             nom_fichier = os.path.basename(chemin_shp)
@@ -1873,7 +1880,7 @@ def api_generer_etude(projet_id: int, type_etude: str, mode: str = "overwrite", 
     # Format de date: YYMMDD
     date_str = datetime.utcnow().strftime("%y%m%d")
     # Identifiant affaire pour les noms de fichiers (ex: 21408_003 => on utilise la ref projet formatee)
-    ref_propre = projet.reference.replace("-", "_")
+    ref_propre = (projet.reference or f"AFF_{projet.id}").replace("-", "_")
 
     # Dossier de base pour les livrables
     base_doe_dir = os.path.join(projet.chemin_dossier, "04_Livrables_DOE")
