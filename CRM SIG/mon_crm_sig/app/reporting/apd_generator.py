@@ -569,7 +569,7 @@ def generer_rapport_apd(donnees: dict, chemin_pdf: str) -> str:
     pdf.set_font("helvetica", "", 9.5)
     pdf.multi_cell(0, 5.5, infos_txt if infos_txt else "-")
 
-    os.makedirs(os.path.dirname(chemin_pdf), exist_ok=True)
+    os.makedirs(os.path.dirname(chemin_pdf) or ".", exist_ok=True)
     pdf.output(chemin_pdf)
     logger.info(f"Rapport APD généré : {chemin_pdf}")
     return chemin_pdf

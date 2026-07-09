@@ -36,6 +36,36 @@ logger = logging.getLogger("crm_sig.main")
 # Création des tables dans la base de données au démarrage
 Base.metadata.create_all(bind=engine)
 
+
+def _migrer_schema_sqlite():
+    """create_all() CRÉE les tables manquantes mais n'ALTER jamais une table
+    existante. Sur une base antérieure à l'ajout d'une colonne au modèle (ex.
+    Client.nomenclature), la requête planterait (« no such column »). On ajoute
+    donc les colonnes manquantes au démarrage (ADD COLUMN, sans contrainte)."""
+    from sqlalchemy import inspect as _inspect, text as _text
+    try:
+        insp = _inspect(engine)
+        for table in Base.metadata.sorted_tables:
+            if not insp.has_table(table.name):
+                continue
+            existantes = {c["name"] for c in insp.get_columns(table.name)}
+            for col in table.columns:
+                if col.name in existantes:
+                    continue
+                try:
+                    coltype = col.type.compile(dialect=engine.dialect)
+                    with engine.begin() as conn:
+                        conn.execute(_text(
+                            f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {coltype}'))
+                    logger.info(f"Migration schéma : colonne {table.name}.{col.name} ajoutée.")
+                except Exception as e:
+                    logger.warning(f"Migration {table.name}.{col.name} impossible : {e}")
+    except Exception as e:
+        logger.warning(f"Migration de schéma ignorée : {e}")
+
+
+_migrer_schema_sqlite()
+
 app = FastAPI(title="GeoCRM SIG Local", version="1.0.0")
 
 # --- Configuration des fichiers statiques et templates ---
@@ -514,8 +544,8 @@ def _maj_shp_livrables_doe(projet, date_tvx, fci, exclus):
             for col in champs_doe:                     # garantir la présence des colonnes DOE
                 if col not in g.columns:
                     g[col] = None
-            # PT : DATE_CREAT (aaaammjj) pour TOUS les PT, y compris l'existant
-            # co-localisé (on écrase le placeholder « AAAAMMJJ ») ; BPE : les
+            # PT : DATE_CREAT reste le placeholder « AAAAMMJJ » (jamais la date TVX)
+            # pour TOUS les PT -> exclus_base=[] (valeur uniforme). BPE : les
             # existants gardent leur DATE_DE_CR (exclusion conservée).
             exclus_base = [] if base == "PT" else exclus.get(base, [])
             dfo.appliquer_champs_doe(g, base, date_tvx, fci, exclus_noms=exclus_base)

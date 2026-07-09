@@ -152,7 +152,9 @@ def _ordonner_boites(bpe_gdf, cables_gdf, bts_gdf, tol=3.0, plafond=100.0):
         for _, rc in cables_gdf.iterrows():
             g = rc.geometry
             if g is not None and not g.is_empty:
-                cables.append((str(rc.get("NOM")), g))
+                nc = rc.get("NOM")
+                nc = "" if nc is None or str(nc).strip().lower() in ("", "nan", "none") else str(nc).strip()
+                cables.append((nc, g))
 
     # Nœuds du réseau câble : extrémités regroupées (tolérance 1 m) -> {nom: geom}
     noeuds = []  # [ [Point, {nom: geom}] ]
@@ -329,11 +331,13 @@ def generer_pds(bpe_gdf, cables_gdf, bts_gdf, pt_gdf, chemin_sortie,
     for box in boites:
         bpe = box["bpe"]
         nom_bpe = str(bpe.get("NOM") or f"BPE_{nb+1}")
-        nom = _nom_onglet(nom_bpe)
+        nom = _nom_onglet(nom_bpe)[:31]                 # limite Excel : 31 caractères
         base_nom = nom; k = 1
-        while nom in noms_utilises:
-            k += 1; nom = f"{base_nom[:28]}_{k}"
-        noms_utilises.add(nom)
+        while nom.lower() in noms_utilises:             # Excel : unicité insensible à la casse
+            k += 1
+            suffixe = f"_{k}"
+            nom = base_nom[:31 - len(suffixe)] + suffixe
+        noms_utilises.add(nom.lower())
 
         ws = wb.copy_worksheet(gabarit)
         ws.title = nom
@@ -349,7 +353,7 @@ def generer_pds(bpe_gdf, cables_gdf, bts_gdf, pt_gdf, chemin_sortie,
             wb.active = i
             break
 
-    os.makedirs(os.path.dirname(chemin_sortie), exist_ok=True)
+    os.makedirs(os.path.dirname(chemin_sortie) or ".", exist_ok=True)
     wb.save(chemin_sortie)
 
     # Ré-injecter les boutons (contrôles de formulaire) supprimés par openpyxl

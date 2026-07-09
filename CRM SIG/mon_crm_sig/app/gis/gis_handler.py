@@ -284,7 +284,10 @@ def generer_livrables_kmz(src_dir: str, dest_kmz: str) -> None:
                 break
         
         if matched_file and os.path.exists(matched_file):
-            dbf_file = matched_file.replace('.shp', '.dbf').replace('.SHP', '.DBF')
+            _base_noext = os.path.splitext(matched_file)[0]   # évite un replace foireux si '.shp' est dans un dossier
+            dbf_file = _base_noext + '.dbf'
+            if not os.path.exists(dbf_file):
+                dbf_file = _base_noext + '.DBF'
             enc = get_encoding(dbf_file) if os.path.exists(dbf_file) else 'utf-8'
             
             gdf = gpd.read_file(matched_file, encoding=enc)
@@ -294,18 +297,24 @@ def generer_livrables_kmz(src_dir: str, dest_kmz: str) -> None:
             
             folder = kml.newfolder(name=layer_name)
             
+            def _vk(v):   # valeur "propre" pour KMZ : ignore None / NaN / vide
+                if v is None or (isinstance(v, float) and v != v):
+                    return ""
+                s = str(v).strip()
+                return "" if s.lower() in ("nan", "none") else s
+
             for _, row in gdf.iterrows():
                 geom = row.geometry
-                if geom is None:
+                if geom is None or geom.is_empty:
                     continue
-                
-                label = str(row.get('NOM', row.get('LIBELLE', row.get('CODE', layer_name)))).strip()
-                
+
+                label = _vk(row.get('NOM')) or _vk(row.get('LIBELLE')) or _vk(row.get('CODE')) or layer_name
+
                 html_table = "<table border='1' style='border-collapse:collapse; font-family:Segoe UI, Arial; font-size:11px; width:300px; border-color:#e0e0e0;'>"
                 html_table += "<tr style='background-color:#00adb5; color:white;'><th style='padding:5px;'>Attribut</th><th style='padding:5px;'>Valeur</th></tr>"
                 for col in gdf.columns:
-                    if col != 'geometry' and row[col] is not None:
-                        html_table += f"<tr><td style='padding:4px; background-color:#f9f9f9;'><b>{col}</b></td><td style='padding:4px;'>{row[col]}</td></tr>"
+                    if col != 'geometry' and _vk(row[col]):
+                        html_table += f"<tr><td style='padding:4px; background-color:#f9f9f9;'><b>{col}</b></td><td style='padding:4px;'>{_vk(row[col])}</td></tr>"
                 html_table += "</table>"
                 
                 if geom.geom_type == 'Point':

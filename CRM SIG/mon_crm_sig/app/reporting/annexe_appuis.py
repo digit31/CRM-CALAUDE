@@ -93,13 +93,14 @@ def _parse_dms(s):
 
 
 def _index_entete(rows, max_scan=40):
-    """Indice (0-based) de la ligne d'en-tête du tableau d'appuis (col « N° appui »)."""
+    """(ligne, colonne) 0-based de l'en-tête « N° appui », ou (None, 0). On renvoie
+    aussi la COLONNE : le numéro d'appui n'est pas toujours en colonne A."""
     for i, r in enumerate(rows[:max_scan]):
-        for c in (r or [])[:3]:
+        for j, c in enumerate((r or [])[:3]):
             t = str(c or "").strip().lower()
             if "appui" in t and (t.startswith("n") or "°" in t):
-                return i
-    return None
+                return i, j
+    return None, 0
 
 
 # ---------------------------------------------------------------------------
@@ -118,12 +119,12 @@ def lire_c6(chemin):
     try:
         ws = wb["Export 1"] if "Export 1" in wb.sheetnames else wb.worksheets[0]
         rows = list(ws.iter_rows(values_only=True))
-        h = _index_entete(rows)
+        h, col_num = _index_entete(rows)
         h = 7 if h is None else h
         for r in rows[h + 1:]:
             if not r:
                 continue
-            num = _num(r[0]) if len(r) > 0 else ""
+            num = _num(r[col_num]) if len(r) > col_num else ""
             if not num or num.lower().startswith("n"):
                 continue
             def g(i):
@@ -154,12 +155,12 @@ def lire_c7(chemin):
     try:
         ws = wb["Commande"] if "Commande" in wb.sheetnames else wb.worksheets[0]
         rows = list(ws.iter_rows(values_only=True))
-        h = _index_entete(rows)
+        h, col_num = _index_entete(rows)
         h = 16 if h is None else h
         for r in rows[h + 1:]:
             if not r:
                 continue
-            num = _num(r[0]) if len(r) > 0 else ""
+            num = _num(r[col_num]) if len(r) > col_num else ""
             if not num or num.lower().startswith("n"):
                 continue
             def g(i):

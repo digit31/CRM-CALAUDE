@@ -183,7 +183,7 @@ def generer_doe_netgeo(dossier_input, dossier_template, dossier_sortie,
         g = gdf_in.copy()
 
         # ---- exclusions : lignes retirées du livrable NETGEO ----
-        if nom_in == "BPE":
+        if nom_in == "BPE" and "ETAT" in g.columns:
             g = g[~g["ETAT"].map(_est_en_service)].copy()   # exclure les existants
         elif nom_in == "PT":
             g = g[~g.index.isin(pt_exclus_idx)].copy()       # exclure PT des BPE existants

@@ -353,6 +353,7 @@ def _compresser_fond(chemin_pdf, quality=72, seuil=400_000):
     except ImportError:
         logger.warning("Plan : PyMuPDF/Pillow absent — PDF non recompressé.")
         return
+    doc = None
     try:
         doc = fitz.open(chemin_pdf)
         vus = set()
@@ -374,11 +375,17 @@ def _compresser_fond(chemin_pdf, quality=72, seuil=400_000):
                     continue
         tmp = chemin_pdf + ".cmp"
         doc.save(tmp, garbage=4, deflate=True, clean=True)
-        doc.close()
+        doc.close(); doc = None                    # fermer AVANT os.replace (verrou Windows)
         os.replace(tmp, chemin_pdf)
         logger.info(f"PDF recompressé (fonds JPEG q{quality}) : {chemin_pdf}")
     except Exception as e:
         logger.warning(f"Plan : recompression du fond impossible ({e}).")
+    finally:
+        if doc is not None:
+            try:
+                doc.close()
+            except Exception:
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -666,7 +673,7 @@ def generer_plan_syno(dossier_shape: str, chemin_pdf: str,
         cart.text(col3 + 8, y, libelle, fontsize=7, va="center")
 
     # --- Export PDF (+ recompression JPEG du fond satellite) ---
-    os.makedirs(os.path.dirname(chemin_pdf), exist_ok=True)
+    os.makedirs(os.path.dirname(chemin_pdf) or ".", exist_ok=True)
     est_png = chemin_pdf.lower().endswith(".png")
     fig.savefig(chemin_pdf, format="png" if est_png else "pdf", dpi=200 if est_png else 300)
     plt.close(fig)
@@ -993,7 +1000,7 @@ def generer_plan_apd(dossier_shape: str, chemin_pdf: str,
         _legende_encart(fig, l_mm, h_mm, l_mm - marge - leg_w - 1,
                         h_mm - marge - leg_h - 1, leg_w, leg_h, blocs)
 
-    os.makedirs(os.path.dirname(chemin_pdf), exist_ok=True)
+    os.makedirs(os.path.dirname(chemin_pdf) or ".", exist_ok=True)
     est_png = chemin_pdf.lower().endswith(".png")
     fig.savefig(chemin_pdf, format="png" if est_png else "pdf", dpi=200 if est_png else 300)
     plt.close(fig)

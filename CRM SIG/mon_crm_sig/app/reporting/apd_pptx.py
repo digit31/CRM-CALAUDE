@@ -343,8 +343,13 @@ def _remplir_vignettes(slide, boites):
     col_x = [Inches(0.41), Inches(4.25)]
     top0, step = 1.13, 1.25
     par_col = max(1, int((10.4 - top0) / step))
+    capacite = 2 * par_col          # 2 colonnes ; au-delà les vignettes se chevaucheraient
 
     for i, box in enumerate(boites):
+        if i >= capacite:
+            logger.warning(f"Vignettes BPE : {len(boites)} boîtes, seules {capacite} affichées "
+                           "(capacité de la slide) — surplus non représenté.")
+            break
         el = copy.deepcopy(proto)
         spTree.append(el)
         shape = slide.shapes[-1]
@@ -442,7 +447,7 @@ def remplir_apd(template_path, donnees, dossier_shape, sortie_pptx,
         else:
             _supprimer_slide(prs, s4)           # aucune boîte -> pas de page vignettes-exemple
 
-    os.makedirs(os.path.dirname(sortie_pptx), exist_ok=True)
+    os.makedirs(os.path.dirname(sortie_pptx) or ".", exist_ok=True)
     prs.save(sortie_pptx)
     logger.info(f"APD PPTX rempli : {sortie_pptx}")
     return sortie_pptx
@@ -467,10 +472,17 @@ def pptx_vers_pdf(pptx_path, pdf_path):
             os.remove(pdf_path)
         except Exception:
             pass
-    res = subprocess.run(
-        [sys.executable, script, os.path.abspath(pptx_path), os.path.abspath(pdf_path)],
-        capture_output=True, text=True, timeout=180,
-    )
+    try:
+        res = subprocess.run(
+            [sys.executable, script, os.path.abspath(pptx_path), os.path.abspath(pdf_path)],
+            capture_output=True, text=True, timeout=180,
+        )
+    except subprocess.TimeoutExpired:
+        try:
+            os.system("taskkill /F /IM POWERPNT.EXE >nul 2>&1")   # tuer l'instance orpheline
+        except Exception:
+            pass
+        raise RuntimeError("Export PPTX→PDF : délai dépassé (180 s) — instance PowerPoint arrêtée.")
     if res.returncode != 0 or not os.path.exists(pdf_path):
         raise RuntimeError(
             "Export PPTX→PDF échoué (PowerPoint requis). "
