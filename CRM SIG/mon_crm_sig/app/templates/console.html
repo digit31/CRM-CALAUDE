@@ -15,6 +15,10 @@
     <div>
       <h1 class="text-2xl font-bold text-slate-800">Console Étude</h1>
       <p class="text-sm text-slate-500 mt-1">Caractéristiques de la liaison — pré-remplies depuis les SHP livrables, puis complétées pour le rapport APD.</p>
+      <p class="flex items-center gap-3 text-[11px] text-slate-400 mt-1.5">
+        <span class="inline-flex items-center gap-1.5"><span class="lgd-dot" style="background:#059669"></span> pré-rempli par le CRM</span>
+        <span class="inline-flex items-center gap-1.5"><span class="lgd-dot" style="background:#ea580c"></span> modifié et enregistré</span>
+      </p>
     </div>
     <div class="flex items-center gap-2">
       <a href="/projets/{{ projet.id }}/etudes" class="px-3 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 border border-slate-200 rounded-lg transition">Retour Études</a>
@@ -233,10 +237,25 @@
   .console-tab { padding:8px 14px; font-size:12px; font-weight:600; border-radius:8px; color:#64748b; white-space:nowrap; transition:all .15s; cursor:pointer; }
   .console-tab:hover { color:#334155; background:#f1f5f9; }
   .console-tab.is-active, .console-tab.is-active:hover { background:#0d9488; color:#fff; box-shadow:0 1px 2px rgba(0,0,0,.05); }
+  /* provenance des valeurs : vert = pré-rempli CRM · orange = modifié + enregistré */
+  .val-crm  { color:#059669 !important; font-weight:600; }
+  .val-user { color:#ea580c !important; font-weight:600; }
+  .lgd-dot { display:inline-block; width:8px; height:8px; border-radius:9999px; }
 </style>
 <script>
   const projetId = {{ projet.id }};
   let donneesActuelles = {};
+  let sourcesActuelles = {};
+
+  // Colore le texte d'un champ selon sa provenance : vert = CRM, orange = modifié.
+  // Les totaux dérivés (readonly) restent neutres.
+  function appliquerSource(inp, src) {
+    inp.classList.remove('val-crm', 'val-user');
+    if (inp.readOnly || inp.classList.contains('inp-total')) return;
+    if (src === 'user') { inp.classList.add('val-user'); return; }
+    const hasVal = inp.value !== '' && inp.value != null;
+    if (hasVal) inp.classList.add('val-crm');
+  }
 
   function toast(msg, type) {
     const t = document.getElementById('console-toast');
@@ -283,14 +302,18 @@
     document.querySelectorAll('.console-tab').forEach(b => b.classList.toggle('is-active', b.dataset.target === name));
   }
 
-  function remplir(donnees) {
+  function remplir(donnees, sources) {
     donneesActuelles = donnees || {};
+    sourcesActuelles = sources || {};
     document.querySelectorAll('#console-form [data-sec]').forEach(inp => {
       const sec = inp.dataset.sec, key = inp.dataset.key;
       const v = (donnees[sec] || {})[key];
       inp.value = (v === null || v === undefined) ? '' : v;
+      appliquerSource(inp, (sourcesActuelles[sec] || {})[key]);
     });
-    document.getElementById('infos-txt').value = donnees.infos || '';
+    const infos = document.getElementById('infos-txt');
+    infos.value = donnees.infos || '';
+    appliquerSource(infos, sourcesActuelles.infos);
     recalcTotaux();   // aligne les totaux dérivés sur les valeurs chargées
   }
 
@@ -342,7 +365,7 @@
     fetch('/api/projets/' + projetId + '/console/donnees' + (recalc ? '?recalc=1' : ''))
       .then(r => r.json())
       .then(data => {
-        remplir(data.donnees);
+        remplir(data.donnees, data.sources);
         document.getElementById('console-loading').classList.add('hidden');
         document.getElementById('console-form').classList.remove('hidden');
         if (recalc) toast('Valeurs recalculées depuis les SHP livrables.', 'ok');
@@ -408,7 +431,13 @@
 
   // Recalcul live des totaux dès qu'une longueur / un appui aérien ou souterrain change
   document.getElementById('console-form').addEventListener('input', (e) => {
-    const d = e.target && e.target.dataset;
+    const t = e.target;
+    // Champ modifié par l'utilisateur -> texte orange (sauf totaux dérivés readonly)
+    if (t && t.matches && t.matches('[data-sec], #infos-txt') && !t.readOnly && !t.classList.contains('inp-total')) {
+      t.classList.remove('val-crm');
+      t.classList.add('val-user');
+    }
+    const d = t && t.dataset;
     if (d && (d.sec === 'souterrain' || d.sec === 'aerien') && d.key && d.key.indexOf('total') === -1) {
       recalcTotaux();
     }

@@ -460,6 +460,36 @@ def fusionner_console(defauts: dict, sauvegarde: dict) -> dict:
     return out
 
 
+def _neq(a, b):
+    """Inégalité tolérante nombre/texte (799 == « 799 » == 799.0)."""
+    try:
+        return round(float(a), 3) != round(float(b if b is not None else 0), 3)
+    except (TypeError, ValueError):
+        return str(a).strip() != str(b if b is not None else "").strip()
+
+
+def sources_console(defauts: dict, sauvegarde: dict) -> dict:
+    """Provenance de chaque champ de la Console :
+      · « user » = saisi / modifié par l'utilisateur (sauvegardé ET différent du
+        défaut calculé par le CRM) ;
+      · sinon (absent du dict) = pré-rempli / calculé par le CRM.
+    Renvoie {section: {champ: "user"}} (seuls les champs « user » sont listés)."""
+    out = {}
+    sauvegarde = sauvegarde or {}
+    for sec, champs in _CHAMPS_MANUELS.items():
+        sv = sauvegarde.get(sec)
+        if not isinstance(sv, dict):
+            continue
+        df = defauts.get(sec) or {}
+        secmap = {k: "user" for k in champs
+                  if sv.get(k) is not None and _neq(sv.get(k), df.get(k))}
+        if secmap:
+            out[sec] = secmap
+    if sauvegarde.get("infos") is not None and _neq(sauvegarde.get("infos"), defauts.get("infos") or ""):
+        out["infos"] = "user"
+    return out
+
+
 # ---------------------------------------------------------------------------
 # 2. Rapport APD_HTL (PDF)
 # ---------------------------------------------------------------------------

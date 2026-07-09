@@ -319,7 +319,8 @@ def api_console_donnees(projet_id: int, recalc: int = 0, db: Session = Depends(g
     # Valeurs AUTO toujours recalculées depuis le SHP livrable (reflète l'état
     # courant même après modification), saisies manuelles préservées.
     donnees = apd_generator.fusionner_console(defauts, sauvegarde)
-    return JSONResponse({"donnees": donnees, "recalcule": bool(recalc),
+    sources = apd_generator.sources_console(defauts, sauvegarde)
+    return JSONResponse({"donnees": donnees, "sources": sources, "recalcule": bool(recalc),
                          "a_sauvegarde": bool(sauvegarde)})
 
 
