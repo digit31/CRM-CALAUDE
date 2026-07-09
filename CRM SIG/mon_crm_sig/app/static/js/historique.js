@@ -7,12 +7,12 @@
   function elapsed(iso) { if (!iso) return ''; const d = new Date(iso); if (isNaN(d)) return ''; return fmtDuree(Math.max(0, (Date.now() - d.getTime()) / 1000)); }
 
   const STAT = {
-    en_cours:  { txt: 'En cours',   bd: 'border-amber-200',   tc: 'text-amber-600',   ic: 'spin' },
-    en_attente:{ txt: 'En attente', bd: 'border-slate-200',   tc: 'text-slate-500',   ic: 'wait', dim: true },
-    en_pause:  { txt: 'En pause',   bd: 'border-slate-300',   tc: 'text-slate-500',   ic: 'pause' },
-    termine:   { txt: 'Terminé',    bd: 'border-emerald-200', tc: 'text-emerald-600', ic: 'check' },
-    erreur:    { txt: 'Échec',      bd: 'border-red-200',     tc: 'text-red-600',     ic: 'x' },
-    annule:    { txt: 'Annulé',     bd: 'border-slate-200',   tc: 'text-slate-400',   ic: 'ban', dim: true },
+    en_cours:  { txt: 'En cours',   bd: 'border-amber-300',   tc: 'text-amber-600',   ic: 'spin',  pill: 'bg-amber-100 text-amber-700' },
+    en_attente:{ txt: 'En attente', bd: 'border-slate-200',   tc: 'text-slate-500',   ic: 'wait',  pill: 'bg-slate-100 text-slate-500', dim: true },
+    en_pause:  { txt: 'En pause',   bd: 'border-slate-300',   tc: 'text-slate-500',   ic: 'pause', pill: 'bg-slate-200 text-slate-600' },
+    termine:   { txt: 'Terminé',    bd: 'border-emerald-200', tc: 'text-emerald-600', ic: 'check', pill: 'bg-emerald-100 text-emerald-700' },
+    erreur:    { txt: 'Échec',      bd: 'border-red-200',     tc: 'text-red-600',     ic: 'x',     pill: 'bg-red-100 text-red-700' },
+    annule:    { txt: 'Annulé',     bd: 'border-slate-200',   tc: 'text-slate-400',   ic: 'ban',   pill: 'bg-slate-100 text-slate-500' },
   };
   const STEP_IC = {
     en_attente: '<svg class="h-3.5 w-3.5 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg>',
@@ -40,6 +40,7 @@
 
   function card(t, isGlobal) {
     const m = STAT[t.statut] || STAT.en_cours;
+    const pill = '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold flex-shrink-0 ' + m.pill + '">' + m.txt + '</span>';
     const active = ['en_cours', 'en_attente', 'en_pause'].includes(t.statut);
     const ets = t.etapes || [];
     const multi = (t.nb_etapes || 1) > 1 || ets.length > 1;
@@ -56,10 +57,13 @@
     let bar = '';
     if (active) {
       const prog = Math.max(2, Math.min(100, t.progression || 0));
-      const col = t.statut === 'en_pause' ? 'bg-slate-400' : (t.statut === 'en_attente' ? 'bg-slate-300' : 'bg-amber-500');
-      bar = (multi || t.statut !== 'en_cours')
-        ? '<div class="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden mt-3"><div class="h-full ' + col + ' rounded-full transition-all duration-500" style="width:' + prog + '%"></div></div>'
-        : '<div class="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden mt-3"><div style="width:40%;border-radius:9999px;animation:histIndet 1.3s ease-in-out infinite" class="h-full bg-amber-500"></div></div>';
+      if (t.statut === 'en_cours' && !multi) {
+        bar = '<div class="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden mt-3"><div style="width:40%;border-radius:9999px;animation:histIndet 1.3s ease-in-out infinite" class="h-full bg-amber-500"></div></div>';
+      } else {
+        const col = t.statut === 'en_pause' ? 'bg-slate-400' : (t.statut === 'en_attente' ? 'bg-slate-300' : 'bg-amber-500');
+        const shine = t.statut === 'en_cours' ? ' hist-shine' : '';   // scintille : montre l'activité même à % figé
+        bar = '<div class="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden mt-3"><div class="h-full ' + col + shine + ' rounded-full transition-all duration-500" style="width:' + prog + '%"></div></div>';
+      }
     }
     let ctrl = '';
     if (active && multi) {
@@ -74,7 +78,9 @@
     }
     const projChip = (isGlobal && t.projet_nom) ? '<span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold bg-brand-50 text-brand-600 ml-2 align-middle">' + esc(t.projet_nom) + '</span>' : '';
     const sous = active
-      ? (t.statut === 'en_cours' ? '<span class="' + m.tc + ' font-medium">' + esc(t.etape || m.txt) + (multi ? ' · étape ' + ((t.etape_idx || 0) + 1) + '/' + t.nb_etapes : '') + '</span>' : '<span class="' + m.tc + ' font-semibold">' + m.txt + '</span>')
+      ? (t.statut === 'en_cours' ? '<span class="' + m.tc + ' font-medium">' + esc(t.etape || m.txt) + (multi ? ' · étape ' + ((t.etape_idx || 0) + 1) + '/' + t.nb_etapes : '') + '</span>'
+         : t.statut === 'en_attente' ? '<span class="text-slate-500">En file d\'attente — démarrera à la fin de la génération en cours</span>'
+         : '<span class="' + m.tc + ' font-semibold">' + m.txt + '</span>')
       : (t.message ? '<span class="text-slate-500">' + esc(t.message) + '</span>' : '<span class="' + m.tc + '">' + m.txt + '</span>');
     const dur = dureeTxt ? '<span class="text-[11px] text-slate-400">' + dureeTxt + '</span>'
       : (active && t.debut ? '<span class="text-[11px] font-mono text-slate-400" data-debut="' + esc(t.debut) + '">' + elapsed(t.debut) + '</span>' : '');
@@ -83,7 +89,7 @@
       + '<div class="mt-0.5 flex-shrink-0 h-8 w-8 rounded-lg flex items-center justify-center ' + (icBg[m.ic] || icBg.spin) + '">' + bigIc(m.ic) + '</div>'
       + '<div class="flex-1 min-w-0">'
       + '<div class="flex items-start justify-between gap-3">'
-      + '<p class="font-semibold text-slate-800 text-sm">' + esc(t.label) + projChip + '</p>'
+      + '<p class="font-semibold text-slate-800 text-sm flex items-center gap-2 flex-wrap min-w-0"><span>' + esc(t.label) + '</span>' + pill + projChip + '</p>'
       + '<div class="text-right flex-shrink-0">' + (heure ? '<p class="text-[11px] text-slate-400">' + heure + '</p>' : '') + dur + '</div>'
       + '</div>'
       + '<p class="text-xs mt-0.5">' + sous + '</p>'
@@ -123,6 +129,8 @@
 
   // keyframes pour la barre indéterminée
   const st = document.createElement('style');
-  st.textContent = '@keyframes histIndet{0%{margin-left:-42%}100%{margin-left:100%}}';
+  st.textContent = '@keyframes histIndet{0%{margin-left:-42%}100%{margin-left:100%}}'
+    + '@keyframes histShine{0%{background-position:200% 0}100%{background-position:-200% 0}}'
+    + '.hist-shine{background-image:linear-gradient(90deg,#f59e0b 0%,#fde68a 50%,#f59e0b 100%);background-size:200% 100%;animation:histShine 1.4s linear infinite}';
   document.head.appendChild(st);
 })();
