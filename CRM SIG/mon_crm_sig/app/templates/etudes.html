@@ -749,8 +749,26 @@
             </span>
         </div>
 
+        <!-- Étape : choix du mode (n'exécute RIEN tant qu'on n'a pas choisi) -->
+        <div id="dos-etape-choix" class="p-6 bg-white">
+            <p class="text-sm text-slate-600 mb-4">Comment générer le <b>dossier complet</b> (SHP · Plan APD + folios · PDS · Synoptique · KMZ) ?</p>
+            <div class="space-y-2">
+                <button id="btn-dos-mode-backend" onclick="dossierModeBackend()" class="w-full text-left p-4 rounded-xl border border-slate-200 hover:border-brand-500 hover:bg-brand-50/40 transition flex items-start gap-3">
+                    <span class="mt-0.5 w-8 h-8 rounded-lg bg-slate-800 text-white flex items-center justify-center flex-shrink-0"><svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-3-4h.01M16 16h.01" /></svg></span>
+                    <span><span class="block font-bold text-slate-800 text-sm">En arrière-plan <span class="text-brand-600">(recommandé)</span></span><span class="block text-xs text-slate-400 mt-0.5">Vous continuez à travailler ; suivi dans l'Historique. La 1ʳᵉ générée passe en premier.</span></span>
+                </button>
+                <button onclick="dossierModeLocal()" class="w-full text-left p-4 rounded-xl border border-slate-200 hover:border-slate-400 hover:bg-slate-50 transition flex items-start gap-3">
+                    <span class="mt-0.5 w-8 h-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center flex-shrink-0"><svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></span>
+                    <span><span class="block font-bold text-slate-800 text-sm">Ici, maintenant</span><span class="block text-xs text-slate-400 mt-0.5">Génération devant vous (bloquant, ~2-3 min). Fermer la fenêtre l'interrompt.</span></span>
+                </button>
+            </div>
+            <div class="text-right mt-4">
+                <button onclick="fermerModalDossier()" class="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 transition">Annuler</button>
+            </div>
+        </div>
+
         <!-- Étape : chargement — stepper séquentiel -->
-        <div id="dos-etape-loading" class="p-6 bg-white overflow-y-auto">
+        <div id="dos-etape-loading" class="hidden p-6 bg-white overflow-y-auto">
             <p class="text-xs text-slate-400 mb-4">Chaque document est généré à la suite depuis les <b>SHP livrables</b> — comptez <b>~2 à 3 minutes</b> (le Plan APD + folios est l'étape la plus longue). Vous pouvez laisser tourner.</p>
             <div class="w-full h-2 bg-slate-100 rounded-full overflow-hidden mb-5">
                 <div id="dos-prog-global" class="h-full bg-gradient-to-r from-brand-400 to-brand-600 rounded-full" style="width:0%;transition:width .7s ease"></div>
@@ -1102,7 +1120,7 @@
     const _BTN_UNIT_CLS = 'inline-flex items-center justify-center gap-1.5 bg-brand-50 text-brand-700 border border-brand-200 hover:bg-brand-600 hover:text-white hover:border-brand-600 font-semibold text-xs py-1.5 px-3.5 rounded-lg shadow-sm transition-all active:scale-95';
 
     function _dosEtape(etape) {
-        ['loading', 'succes', 'erreur'].forEach(e => {
+        ['choix', 'loading', 'succes', 'erreur'].forEach(e => {
             const el = document.getElementById('dos-etape-' + e);
             if (el) el.classList.toggle('hidden', e !== etape);
         });
@@ -1176,13 +1194,25 @@
     }
     function _dosChronoStop() { clearInterval(_dosChrono); }
 
-    // Ouvre le modal et lance la génération complète (tout en séquence).
+    // Ouvre le modal : DEMANDE le mode (n'exécute rien tant qu'on n'a pas choisi,
+    // pour ne pas lancer de génération synchrone qui monopoliserait le créneau).
     function ouvrirModalDossier() {
         if (_dosEnCours) { document.getElementById('modal-dossier').classList.remove('hidden'); return; }
+        _dosEtape('choix');
+        document.getElementById('dos-chrono').textContent = '00:00';
+        document.getElementById('modal-dossier').classList.remove('hidden');
+    }
+
+    // Choix « En arrière-plan » : lance la tâche backend (aucune génération synchrone).
+    function dossierModeBackend() {
+        lancerTacheBackend('dossier_complet', document.getElementById('btn-dos-mode-backend'));
+    }
+
+    // Choix « Ici, maintenant » : stepper synchrone bloquant (comportement classique).
+    function dossierModeLocal() {
         _dosStepBuild();
         _dosEtape('loading');
         document.getElementById('dos-chrono').textContent = '00:00';
-        document.getElementById('modal-dossier').classList.remove('hidden');
         dossierLancer();
     }
 
