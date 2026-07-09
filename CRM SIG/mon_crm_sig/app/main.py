@@ -281,8 +281,64 @@ import time as _time
 
 _TACHES = {}                        # {tache_id: {...}} registre en mémoire des tâches
 _TACHES_LOCK = _threading.Lock()    # protège _TACHES
-_GEN_LOCK = _threading.RLock()      # sérialise les générations (matplotlib non thread-safe ;
-                                    # RLock : réentrant pour le thread de tâche qui appelle api_generer_etude)
+
+# --- Créneau de génération FIFO (matplotlib non thread-safe : 1 génération à la
+# fois). Priorité par « seq » (ordre de CRÉATION) : le premier créé passe le
+# premier et garde la priorité pour TOUTES ses étapes (un dossier complet
+# s'exécute en entier avant le suivant). Une tâche reste inscrite dans la file
+# entre ses étapes (garde sa place) ; elle cède sa place en PAUSE. ---
+_GEN_COND = _threading.Condition()
+_gen_busy = False                   # un créneau de génération est-il occupé ?
+_gen_waiters = []                   # seq des générations en file
+_gen_seq_counter = 0                # compteur monotone = ordre de création (FIFO)
+
+
+def _gen_next_seq():
+    global _gen_seq_counter
+    with _GEN_COND:
+        _gen_seq_counter += 1
+        return _gen_seq_counter
+
+
+def _gen_register(seq):
+    with _GEN_COND:
+        if seq not in _gen_waiters:
+            _gen_waiters.append(seq)
+
+
+def _gen_unregister(seq):
+    with _GEN_COND:
+        if seq in _gen_waiters:
+            _gen_waiters.remove(seq)
+        _GEN_COND.notify_all()
+
+
+def _gen_try_acquire(seq):
+    """True si le créneau est libre ET que `seq` est le plus petit en file (son
+    tour). N'enlève PAS seq de la file : la tâche garde sa priorité pour l'étape
+    suivante (dossier complet non interrompu). Libérer avec _gen_release()."""
+    global _gen_busy
+    with _GEN_COND:
+        if seq not in _gen_waiters:
+            _gen_waiters.append(seq)
+        if not _gen_busy and _gen_waiters and min(_gen_waiters) == seq:
+            _gen_busy = True
+            return True
+        return False
+
+
+def _gen_release():
+    global _gen_busy
+    with _GEN_COND:
+        _gen_busy = False
+        _GEN_COND.notify_all()
+
+
+def _gen_acquire_blocking(seq):
+    """Attend le créneau en respectant l'ordre FIFO (génération synchrone)."""
+    _gen_register(seq)
+    while not _gen_try_acquire(seq):
+        _time.sleep(0.05)
 
 # Libellés lisibles par type de génération
 _ETAPE_LABELS = {
@@ -404,16 +460,24 @@ def _executer_tache(tache_id, projet_id, etapes, mode):
     db = SessionLocal()
     t0 = _time.time()
     dernier = {}
+    seq = _tache_val(tache_id, "seq", 0) or 0
+    _gen_register(seq)   # entre dans la file FIFO (priorité = ordre de création)
     try:
         projet = crm_service.obtenir_projet(db, projet_id)
         if not projet:
             return
         nb = max(1, len(etapes))
         for i, key in enumerate(etapes):
-            # --- contrôle entre étapes : pause puis annulation ---
+            # --- contrôle entre étapes : pause (cède la priorité) puis annulation ---
+            paused = False
             while _tache_flag(tache_id, "pause") and not _tache_flag(tache_id, "annuler"):
+                if not paused:
+                    _gen_unregister(seq)   # en pause : on cède sa place aux autres
+                    paused = True
                 _maj_tache(tache_id, statut="en_pause")
                 _time.sleep(0.4)
+            if paused:
+                _gen_register(seq)         # reprise : on reprend sa place (par seq)
             if _tache_flag(tache_id, "annuler") or tache_id not in _TACHES:
                 _finir_tache(tache_id, projet, "annule", "Génération annulée.", t0)
                 return
@@ -428,23 +492,22 @@ def _executer_tache(tache_id, projet_id, etapes, mode):
             if key == "shape" and nb > 1 and not _shapes_a_maj(projet) and _shp_livrable_existe(projet):
                 _maj_tache_etape(tache_id, i, "ignore", duree=0)
                 continue
-            # Acquisition du verrou : si une autre génération le tient -> « en attente ».
-            # Le temps d'attente est compté À PART (attente_s), pas dans la génération.
-            if not _GEN_LOCK.acquire(blocking=False):
+            # Acquisition FIFO du créneau : le plus petit seq (créé en premier) passe
+            # en premier. Sinon -> « en attente » (temps d'attente compté à part).
+            got = _gen_try_acquire(seq)
+            if not got:
                 _maj_tache(tache_id, statut="en_attente")
                 _maj_tache_etape(tache_id, i, "en_attente")
                 w0 = _time.time()
                 att_base = _tache_val(tache_id, "attente_s", 0) or 0
-                while not _GEN_LOCK.acquire(timeout=0.4):
+                while not got:
                     if _tache_flag(tache_id, "annuler"):   # annulable pendant l'attente
                         _finir_tache(tache_id, projet, "annule", "Génération annulée.", t0)
                         return
                     _maj_tache(tache_id, attente_s=att_base + (_time.time() - w0))
+                    _time.sleep(0.2)
+                    got = _gen_try_acquire(seq)
                 _maj_tache(tache_id, attente_s=att_base + (_time.time() - w0))
-                if _tache_flag(tache_id, "annuler"):
-                    _GEN_LOCK.release()
-                    _finir_tache(tache_id, projet, "annule", "Génération annulée.", t0)
-                    return
             et0 = _time.time()
             try:
                 _maj_tache(tache_id, statut="en_cours")
@@ -463,10 +526,11 @@ def _executer_tache(tache_id, projet_id, etapes, mode):
                 return
             finally:
                 _TASK_CTX.in_task = False
-                _GEN_LOCK.release()
+                _gen_release()   # libère le créneau (reste inscrit -> garde la priorité pour l'étape suivante)
         _finir_tache(tache_id, projet, "termine",
                      dernier.get("message", "Génération terminée."), t0)
     finally:
+        _gen_unregister(seq)   # sort définitivement de la file
         db.close()
 
 
@@ -515,12 +579,13 @@ def _lancer_tache(projet_id, type_, mode="overwrite", projet_nom=""):
     from datetime import datetime as _dtc
     etapes = list(_DOSSIER_COMPLET_ETAPES) if type_ == "dossier_complet" else [type_]
     tache_id = _uuid.uuid4().hex[:12]
+    seq = _gen_next_seq()   # ordre de création = priorité FIFO
     with _TACHES_LOCK:
         # purge des tâches terminées (bornage mémoire — elles sont archivées en JSON)
         for k in [k for k, v in _TACHES.items() if v.get("statut") in ("termine", "erreur", "annule")]:
             _TACHES.pop(k, None)
         _TACHES[tache_id] = {
-            "id": tache_id, "projet_id": projet_id, "projet_nom": projet_nom,
+            "id": tache_id, "projet_id": projet_id, "projet_nom": projet_nom, "seq": seq,
             "type": type_, "label": _label_tache(type_),
             "statut": "en_cours", "etape": _ETAPE_LABELS.get(etapes[0], etapes[0]),
             "etape_idx": 0, "nb_etapes": len(etapes),
@@ -2448,7 +2513,14 @@ def api_generer_etude(projet_id: int, type_etude: str, mode: str = "overwrite", 
     
     message = ""
 
-    _GEN_LOCK.acquire()   # une seule génération à la fois (matplotlib non thread-safe)
+    # Créneau de génération FIFO. Appel depuis un thread de tâche (in_task) : la
+    # tâche tient déjà le créneau -> on ne le reprend pas. Sinon (SYNC, modal) :
+    # ticket FIFO propre.
+    _from_task = getattr(_TASK_CTX, "in_task", False)
+    _sync_seq = None
+    if not _from_task:
+        _sync_seq = _gen_next_seq()
+        _gen_acquire_blocking(_sync_seq)
     _gen_t0 = _time.time()
     try:
         if type_etude == "doe_global":
@@ -2726,7 +2798,9 @@ def api_generer_etude(projet_id: int, type_etude: str, mode: str = "overwrite", 
         logger.error(f"Erreur generation etude {type_etude}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        _GEN_LOCK.release()
+        if not _from_task:
+            _gen_release()
+            _gen_unregister(_sync_seq)
 
 @app.post("/api/projets/{projet_id}/couches/{couche_id}/sauvegarder-attributs")
 async def api_sauvegarder_attributs(request: Request, projet_id: int, couche_id: int, db: Session = Depends(get_db)):
