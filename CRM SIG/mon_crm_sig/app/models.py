@@ -75,7 +75,7 @@ class LogGeneration(Base):
     utilisateur_id = Column(Integer, ForeignKey("utilisateurs.id"), nullable=True) # Optionnel si l'auth n'est pas encore stricte
     type_livrable = Column(String(100), nullable=False) # ex: "SHP", "KMZ", "Rapport APD_HTL", "Plan de Câblage"
     details = Column(Text, nullable=True) # Infos supplémentaires
-    date_generation = Column(DateTime, default=datetime.utcnow)
+    date_generation = Column(DateTime, default=datetime.now)  # heure LOCALE (app mono-poste)
 
     projet = relationship("Projet", back_populates="logs")
     utilisateur = relationship("Utilisateur")

@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+
+{% block nav_dashboard_class %}text-brand-300 hover:bg-white/10{% endblock %}
+{% block nav_historique_class %}bg-white/10 text-white shadow-sm{% endblock %}
+{% block header_title %}Historique — {{ projet.reference or projet.nom }}{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto">
+
+  <!-- En-tête -->
+  <div class="mb-6">
+    <h1 class="text-2xl font-bold text-slate-800">Historique du projet</h1>
+    <p class="text-sm text-slate-500 mt-1">Générations et modifications — en cours (temps réel) et passées. Les générations lancées en arrière-plan apparaissent ici avec leur avancement.</p>
+  </div>
+
+  <!-- ===== TÂCHES EN COURS (temps réel) ===== -->
+  <section id="sec-actives" class="hidden mb-6">
+    <h2 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+      <span class="relative flex h-2 w-2"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span><span class="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span></span>
+      En cours
+    </h2>
+    <div id="liste-actives" class="space-y-3"></div>
+  </section>
+
+  <!-- ===== HISTORIQUE (journal) ===== -->
+  <section class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+    <div class="px-5 py-3 bg-slate-50/80 border-b border-slate-100 flex items-center justify-between">
+      <span class="font-semibold text-slate-700 text-sm">Journal d'activité</span>
+      <span id="evt-count" class="text-[11px] text-slate-400"></span>
+    </div>
+    <div id="liste-evenements" class="divide-y divide-slate-100"></div>
+    <div id="evt-vide" class="hidden p-10 text-center">
+      <div class="w-14 h-14 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3">
+        <svg class="h-7 w-7 text-slate-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+      </div>
+      <p class="text-sm font-medium text-slate-600">Aucune activité pour l'instant</p>
+      <p class="text-xs text-slate-400 mt-1">Générez une étude (depuis Études) pour voir l'historique se remplir.</p>
+    </div>
+  </section>
+</div>
+
+<div id="hist-toast" class="hidden fixed bottom-6 right-6 z-50 px-4 py-3 rounded-lg text-sm font-medium shadow-lg"></div>
+{% endblock %}
+
+{% block scripts_extra %}
+<style>
+  /* Barre indéterminée (générations mono-étape : pas d'avancement granulaire) */
+  .bar-indet { width: 40%; border-radius: 9999px; animation: indet 1.3s ease-in-out infinite; }
+  @keyframes indet { 0% { margin-left: -42%; } 100% { margin-left: 100%; } }
+</style>
+<script>
+  const projetId = {{ projet.id }};
+  let _prevActives = 0;
+
+  function esc(v){ return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function fmtDate(iso){
+    if(!iso) return '—';
+    const d = new Date(iso);
+    if (isNaN(d)) return esc(iso);
+    return d.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'}) + ' ' +
+           d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+  }
+  function elapsed(iso){
+    if(!iso) return '';
+    const d = new Date(iso); if(isNaN(d)) return '';
+    let s = Math.max(0, Math.round((Date.now()-d.getTime())/1000));
+    const m = Math.floor(s/60); s = s%60;
+    return (m? m+'m ':'') + s + 's';
+  }
+  function toast(msg, type){
+    const t = document.getElementById('hist-toast');
+    t.textContent = msg;
+    t.className = 'fixed bottom-6 right-6 z-50 px-4 py-3 rounded-lg text-sm font-medium shadow-lg ' +
+      (type==='error' ? 'bg-red-600 text-white' : 'bg-emerald-600 text-white');
+    t.classList.remove('hidden');
+    clearTimeout(window.__ht); window.__ht = setTimeout(()=>t.classList.add('hidden'), 4000);
+  }
+
+  const _ETAPE_ICONE = {
+    en_attente: '<svg class="h-3.5 w-3.5 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg>',
+    en_cours:   '<svg class="h-3.5 w-3.5 text-amber-500 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z"></path></svg>',
+    termine:    '<svg class="h-3.5 w-3.5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>',
+    erreur:     '<svg class="h-3.5 w-3.5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>',
+  };
+
+  function rendActives(actives){
+    const sec = document.getElementById('sec-actives');
+    const box = document.getElementById('liste-actives');
+    if(!actives.length){ sec.classList.add('hidden'); box.innerHTML=''; return; }
+    sec.classList.remove('hidden');
+    box.innerHTML = actives.map(t => {
+      const etapes = (t.etapes||[]).map(e =>
+        '<div class="flex items-center gap-2 text-xs '+(e.statut==='en_cours'?'text-amber-700 font-semibold':e.statut==='termine'?'text-slate-500':e.statut==='erreur'?'text-red-600':'text-slate-400')+'">'
+        + (_ETAPE_ICONE[e.statut]||_ETAPE_ICONE.en_attente) + '<span>'+esc(e.label)+'</span></div>').join('');
+      const prog = Math.max(2, Math.min(100, t.progression||0));
+      const multi = (t.nb_etapes||1) > 1;
+      // multi-étapes : barre déterminée (avancement par étape) ; mono-étape : barre indéterminée
+      const barre = multi
+        ? '<div class="h-2 w-full bg-slate-100 rounded-full overflow-hidden mb-3"><div class="h-full bg-amber-500 rounded-full transition-all duration-500" style="width:'+prog+'%"></div></div>'
+        : '<div class="h-2 w-full bg-slate-100 rounded-full overflow-hidden mb-3"><div class="bar-indet h-full bg-amber-500"></div></div>';
+      return ''
+        + '<div class="bg-white rounded-xl border border-amber-200 shadow-sm p-4">'
+        +   '<div class="flex items-start justify-between gap-3 mb-2">'
+        +     '<div><p class="font-semibold text-slate-800 text-sm">'+esc(t.label)+'</p>'
+        +       '<p class="text-xs text-amber-600 mt-0.5">'+esc(t.etape||'')+(multi? ' · étape '+((t.etape_idx||0)+1)+'/'+t.nb_etapes : '')+'</p></div>'
+        +     '<span class="text-xs font-mono text-slate-400" data-debut="'+esc(t.debut)+'">'+elapsed(t.debut)+'</span>'
+        +   '</div>'
+        +   barre
+        +   (multi ? '<div class="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-1.5">'+etapes+'</div>' : '')
+        + '</div>';
+    }).join('');
+  }
+
+  function badgeType(type){
+    const t = String(type||'');
+    let cls = 'bg-slate-100 text-slate-600 border-slate-200';
+    if (/MISE À JOUR|LONGUEUR/i.test(t)) cls = 'bg-brand-50 text-brand-700 border-brand-200';
+    else if (/NETGEO|DOE/i.test(t)) cls = 'bg-amber-100 text-amber-800 border-amber-200';
+    else if (/RAPPORT|APD/i.test(t)) cls = 'bg-indigo-50 text-indigo-700 border-indigo-200';
+    else if (/KMZ|SHAPE|SHP|SYNO|PDS/i.test(t)) cls = 'bg-sky-50 text-sky-700 border-sky-200';
+    return '<span class="inline-flex items-center whitespace-nowrap px-2 py-0.5 rounded-full text-[11px] font-semibold border '+cls+'">'+esc(t)+'</span>';
+  }
+
+  function rendEvenements(evs){
+    const box = document.getElementById('liste-evenements');
+    const vide = document.getElementById('evt-vide');
+    document.getElementById('evt-count').textContent = evs.length ? (evs.length + ' événement' + (evs.length>1?'s':'')) : '';
+    if(!evs.length){ box.innerHTML=''; vide.classList.remove('hidden'); return; }
+    vide.classList.add('hidden');
+    box.innerHTML = evs.map(e => {
+      const ic = e.succes
+        ? '<div class="mt-0.5 flex-shrink-0 h-8 w-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center"><svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg></div>'
+        : '<div class="mt-0.5 flex-shrink-0 h-8 w-8 rounded-lg bg-red-50 text-red-600 flex items-center justify-center"><svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>';
+      return ''
+        + '<div class="flex items-start gap-3 px-5 py-3 hover:bg-slate-50/60 transition">'
+        +   ic
+        +   '<div class="flex-1 min-w-0">'
+        +     '<div class="flex items-center gap-2 flex-wrap">'+badgeType(e.type_livrable)+'<span class="text-xs text-slate-400">'+fmtDate(e.date)+'</span></div>'
+        +     (e.details ? '<p class="text-sm text-slate-600 mt-1 break-words">'+esc(e.details)+'</p>' : '')
+        +   '</div>'
+        + '</div>';
+    }).join('');
+  }
+
+  function charger(){
+    fetch('/api/projets/'+projetId+'/historique?_t='+Date.now())
+      .then(r=>r.json())
+      .then(d=>{
+        const actives = d.actives||[];
+        rendActives(actives);
+        rendEvenements(d.evenements||[]);
+        if (_prevActives>0 && actives.length===0) toast('Génération terminée — voir le journal.', 'ok');
+        _prevActives = actives.length;
+      })
+      .catch(()=>{});
+  }
+
+  // Rafraîchit le compteur de temps écoulé sans re-fetch (fluide)
+  setInterval(()=>{ document.querySelectorAll('[data-debut]').forEach(s=>{ s.textContent = elapsed(s.dataset.debut); }); }, 1000);
+  charger();
+  setInterval(charger, 1500);
+</script>
+{% endblock %}

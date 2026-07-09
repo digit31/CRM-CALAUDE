@@ -266,6 +266,199 @@ def _shapes_a_maj(projet) -> bool:
     return os.path.exists(_chemin_flag_maj(projet))
 
 
+# =====================================================================
+# TÂCHES EN ARRIÈRE-PLAN + HISTORIQUE (génération non bloquante)
+# =====================================================================
+import threading as _threading
+import uuid as _uuid
+import time as _time
+
+_TACHES = {}                        # {tache_id: {...}} registre en mémoire des tâches
+_TACHES_LOCK = _threading.Lock()    # protège _TACHES
+_GEN_LOCK = _threading.RLock()      # sérialise les générations (matplotlib non thread-safe ;
+                                    # RLock : réentrant pour le thread de tâche qui appelle api_generer_etude)
+
+# Libellés lisibles par type de génération
+_ETAPE_LABELS = {
+    "shape": "Cartographie SHP livrable",
+    "rapport": "Plan APD + folios (PDF)",
+    "pds": "Plan de câblage (PDS)",
+    "syno": "Plan Synoptique (PDF)",
+    "kmz": "Cartographie KMZ",
+    "doe_fo_netgeo": "Dossier NETGEO (SHP/KMZ/DWG)",
+    "doe_fo_global": "Arborescence DOE FO",
+    "doe_fo_vtl": "Rapport VTL",
+    "doe_fo_htl": "Rapport HTL",
+    "doe_fo_syno": "Plan Synoptique DOE",
+    "doe_fo_pds": "Plan de boîte PDS",
+    "doe_global": "Arborescence APD",
+}
+_DOSSIER_COMPLET_ETAPES = ["shape", "rapport", "pds", "syno", "kmz"]
+
+
+def _label_tache(type_):
+    return "Dossier complet (APD FO)" if type_ == "dossier_complet" \
+        else _ETAPE_LABELS.get(type_, type_)
+
+
+def _snapshot_taches(projet_id):
+    """Tâches ACTIVES (en cours/attente) du projet, copie pour lecture concurrente."""
+    with _TACHES_LOCK:
+        return [dict(v) for v in _TACHES.values()
+                if v.get("projet_id") == projet_id and v.get("statut") in ("en_cours", "en_attente")]
+
+
+def _executer_tache(tache_id, projet_id, etapes, mode):
+    """Thread : exécute les étapes de génération en séquence, met à jour la
+    progression, et journalise (LogGeneration) — les erreurs y sont consignées
+    (le succès de chaque étape est déjà journalisé par api_generer_etude)."""
+    import json as _json
+    from datetime import datetime as _dtc
+    from app.database import SessionLocal
+    db = SessionLocal()
+    t0 = _time.time()
+    dernier = {}
+    try:
+        projet = crm_service.obtenir_projet(db, projet_id)
+        if not projet:
+            return
+        nb = max(1, len(etapes))
+        with _GEN_LOCK:                         # une génération à la fois
+            for i, key in enumerate(etapes):
+                with _TACHES_LOCK:
+                    t = _TACHES.get(tache_id)
+                    if t is None:
+                        return
+                    t["etape_idx"] = i
+                    t["etape"] = _ETAPE_LABELS.get(key, key)
+                    t["progression"] = int(i * 100 / nb)
+                    t["etapes"][i]["statut"] = "en_cours"
+                try:
+                    resp = api_generer_etude(projet_id, key, mode, db=db)
+                    dernier = _json.loads(getattr(resp, "body", b"{}") or b"{}")
+                    with _TACHES_LOCK:
+                        if tache_id in _TACHES:
+                            _TACHES[tache_id]["etapes"][i]["statut"] = "termine"
+                            _TACHES[tache_id]["resultat"] = dernier
+                except Exception as e:
+                    detail = e.detail if isinstance(e, HTTPException) else str(e)
+                    logger.error(f"Tâche {tache_id} étape {key} : {detail}")
+                    with _TACHES_LOCK:
+                        if tache_id in _TACHES:
+                            _TACHES[tache_id]["etapes"][i]["statut"] = "erreur"
+                    _finir_tache(tache_id, projet, "erreur",
+                                 f"{_ETAPE_LABELS.get(key, key)} : {detail}", t0, journaliser=True)
+                    return
+        _finir_tache(tache_id, projet, "termine",
+                     dernier.get("message", "Génération terminée."), t0, journaliser=False)
+    finally:
+        db.close()
+
+
+def _finir_tache(tache_id, projet, statut, message, t0, journaliser):
+    """Clôt une tâche : met à jour son état et (si demandé, i.e. sur erreur)
+    journalise dans LogGeneration."""
+    from datetime import datetime as _dtc
+    duree = int(_time.time() - t0)
+    with _TACHES_LOCK:
+        t = _TACHES.get(tache_id)
+        label = t.get("label", "Génération") if t else "Génération"
+        if t:
+            t["statut"] = statut
+            t["progression"] = 100 if statut == "termine" else t.get("progression", 0)
+            t["fin"] = _dtc.now().isoformat(timespec="seconds")
+            t["duree_s"] = duree
+            t["message"] = message
+    if journaliser:
+        try:
+            from app.database import SessionLocal
+            dbx = SessionLocal()
+            try:
+                crm_service.enregistrer_log(dbx, projet.id, f"{label} (arrière-plan)",
+                                            details=f"✗ ÉCHEC — {message} ({duree}s)")
+            finally:
+                dbx.close()
+        except Exception as e:
+            logger.warning(f"Journalisation tâche {tache_id} : {e}")
+
+
+def _lancer_tache(projet_id, type_, mode="overwrite"):
+    """Crée une tâche et démarre son thread. Renvoie l'identifiant."""
+    from datetime import datetime as _dtc
+    etapes = list(_DOSSIER_COMPLET_ETAPES) if type_ == "dossier_complet" else [type_]
+    tache_id = _uuid.uuid4().hex[:12]
+    with _TACHES_LOCK:
+        # purge des tâches terminées (bornage mémoire)
+        for k in [k for k, v in _TACHES.items() if v.get("statut") in ("termine", "erreur")]:
+            _TACHES.pop(k, None)
+        _TACHES[tache_id] = {
+            "id": tache_id, "projet_id": projet_id, "type": type_, "label": _label_tache(type_),
+            "statut": "en_cours", "etape": _ETAPE_LABELS.get(etapes[0], etapes[0]),
+            "etape_idx": 0, "nb_etapes": len(etapes),
+            "etapes": [{"key": k, "label": _ETAPE_LABELS.get(k, k), "statut": "en_attente"} for k in etapes],
+            "progression": 0, "debut": _dtc.now().isoformat(timespec="seconds"),
+            "fin": None, "duree_s": None, "message": "", "resultat": {},
+        }
+    th = _threading.Thread(target=_executer_tache, args=(tache_id, projet_id, etapes, mode), daemon=True)
+    th.start()
+    return tache_id
+
+
+@app.post("/api/projets/{projet_id}/taches")
+async def api_lancer_tache(projet_id: int, request: Request, db: Session = Depends(get_db)):
+    """Lance une génération EN ARRIÈRE-PLAN (thread) : la réponse est immédiate,
+    le suivi se fait sur la page Historique. `type` = un type d'étude
+    (rapport/shape/pds/syno/kmz/doe_fo_netgeo/…) ou « dossier_complet »."""
+    projet = crm_service.obtenir_projet(db, projet_id)
+    if not projet:
+        raise HTTPException(status_code=404, detail="Projet non trouvé")
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    type_ = (body.get("type") or "").strip()
+    mode = body.get("mode") or "overwrite"
+    valides = set(_ETAPE_LABELS) | {"dossier_complet"}
+    if type_ not in valides:
+        raise HTTPException(status_code=400, detail=f"Type de génération inconnu : {type_}")
+    tache_id = _lancer_tache(projet_id, type_, mode)
+    return JSONResponse({"tache_id": tache_id, "label": _label_tache(type_),
+                         "message": "Génération lancée en arrière-plan."})
+
+
+@app.get("/api/projets/{projet_id}/historique")
+def api_historique(projet_id: int, limit: int = 100, db: Session = Depends(get_db)):
+    """Historique du projet : tâches actives (en mémoire, progression temps réel)
+    + événements journalisés (LogGeneration)."""
+    projet = crm_service.obtenir_projet(db, projet_id)
+    if not projet:
+        raise HTTPException(status_code=404, detail="Projet non trouvé")
+    actives = _snapshot_taches(projet_id)
+    logs = (db.query(models.LogGeneration)
+            .filter(models.LogGeneration.projet_id == projet_id)
+            .order_by(models.LogGeneration.date_generation.desc())
+            .limit(limit).all())
+    evenements = [{
+        "id": lg.id,
+        "type_livrable": lg.type_livrable,
+        "details": lg.details or "",
+        "date": lg.date_generation.isoformat() if lg.date_generation else None,
+        "succes": not str(lg.details or "").lstrip().startswith("✗"),
+    } for lg in logs]
+    return JSONResponse({"actives": actives, "evenements": evenements})
+
+
+@app.get("/projets/{projet_id}/historique", response_class=HTMLResponse)
+def page_historique(request: Request, projet_id: int, db: Session = Depends(get_db)):
+    """Page Historique : suivi des générations/modifications du projet."""
+    projet = crm_service.obtenir_projet(db, projet_id)
+    if not projet:
+        raise HTTPException(status_code=404, detail="Projet non trouvé")
+    return templates.TemplateResponse("historique.html", {
+        "request": request, "projet": projet, "type_etude": _type_etude_projet(projet),
+    })
+
+
 @app.get("/projets/{projet_id}/console", response_class=HTMLResponse)
 def page_console(request: Request, projet_id: int, db: Session = Depends(get_db)):
     """Console Étude : écran de saisie des données du rapport (par projet)."""
@@ -1016,6 +1209,13 @@ def api_maj_longueurs(projet_id: int, db: Session = Depends(get_db)):
     rapport["conforme"] = (rapport["nb_ecrit"] == 0 and rapport["nb_anomalie"] == 0)
     if rapport["nb_ecrit"] > 0:
         _marquer_shapes_a_maj(projet)                  # MAJ Shapes obligatoire (livrables modifiés)
+        try:
+            crm_service.enregistrer_log(
+                db, projet.id, "Mise à jour des longueurs",
+                details=f"{rapport['nb_ecrit']} longueur(s) de support recalculée(s)"
+                        + (f" ; {rapport['nb_anomalie']} anomalie(s) câble" if rapport['nb_anomalie'] else ""))
+        except Exception:
+            pass
     logger.info(f"MAJ longueurs projet {projet_id} : {rapport['nb_ecrit']} support(s) écrit(s), "
                 f"{rapport['nb_anomalie']} anomalie(s) câble sur {rapport['nb_total']} entités.")
     return JSONResponse(rapport)
@@ -2079,6 +2279,7 @@ def api_generer_etude(projet_id: int, type_etude: str, mode: str = "overwrite", 
     
     message = ""
 
+    _GEN_LOCK.acquire()   # une seule génération à la fois (matplotlib non thread-safe)
     try:
         if type_etude == "doe_global":
             # Créer l'arborescence complète
@@ -2349,6 +2550,8 @@ def api_generer_etude(projet_id: int, type_etude: str, mode: str = "overwrite", 
     except Exception as e:
         logger.error(f"Erreur generation etude {type_etude}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        _GEN_LOCK.release()
 
 @app.post("/api/projets/{projet_id}/couches/{couche_id}/sauvegarder-attributs")
 async def api_sauvegarder_attributs(request: Request, projet_id: int, couche_id: int, db: Session = Depends(get_db)):

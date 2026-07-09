@@ -744,6 +744,13 @@
                 <div id="dos-prog-global" class="h-full bg-gradient-to-r from-brand-400 to-brand-600 rounded-full" style="width:0%;transition:width .7s ease"></div>
             </div>
             <div id="dos-steps" class="space-y-2"></div>
+            <div class="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between gap-3">
+                <p class="text-[11px] text-slate-400">Ne restez pas bloqué : lancez en arrière-plan et suivez l'avancement dans l'<b>Historique</b>.</p>
+                <button onclick="passerEnBackend()" id="btn-dos-backend" class="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg bg-slate-800 text-white hover:bg-slate-900 transition-all active:scale-95 whitespace-nowrap">
+                    <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-3-4h.01M16 16h.01" /></svg>
+                    Étude backend
+                </button>
+            </div>
         </div>
 
         <!-- Étape : succès -->
@@ -1054,7 +1061,7 @@
         { key: 'syno',    t: "Plan Synoptique",           d: "Architecture réseau (PDF) depuis les SHP livrables.", dur: 15000 },
         { key: 'kmz',     t: "Cartographie KMZ",          d: "Export Google Earth (.kmz) depuis les SHP livrables.", dur: 10000 },
     ];
-    let _dosChrono = null, _dosT0 = 0, _dosIdx = -1, _dosEnCours = false;
+    let _dosChrono = null, _dosT0 = 0, _dosIdx = -1, _dosEnCours = false, _dosBackend = false;
     const _DOS_SPIN = '<svg class="animate-spin h-3.5 w-3.5 text-brand-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>';
     const _DOS_CHECK = '<svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>';
     const _BTN_UNIT_CLS = 'inline-flex items-center justify-center gap-1.5 bg-brand-50 text-brand-700 border border-brand-200 hover:bg-brand-600 hover:text-white hover:border-brand-600 font-semibold text-xs py-1.5 px-3.5 rounded-lg shadow-sm transition-all active:scale-95';
@@ -1146,11 +1153,13 @@
 
     async function dossierLancer() {
         _dosEnCours = true;
+        _dosBackend = false;
         _dosIdx = -1;
         _dosChronoStart();
         const base = '/api/projets/{{ projet.id }}/generer-etude/';
         let dernier = {};
         for (let i = 0; i < DOSSIER_ETAPES.length; i++) {
+            if (_dosBackend) { _dosEnCours = false; _dosChronoStop(); return; }  // repris en arrière-plan
             const e = DOSSIER_ETAPES[i];
             _dosActiver(i);
             // SHP déjà à jour (verrou « MAJ Shapes » levé) : on n'écrase pas les éditions livrables.
@@ -1189,6 +1198,32 @@
 
     function fermerModalDossier() { document.getElementById('modal-dossier').classList.add('hidden'); }
     function ouvrirPdfDossier() { if (apdUrl) window.open(apdUrl + '?_t=' + Date.now(), '_blank'); }
+
+    // Lance une génération EN ARRIÈRE-PLAN et redirige vers l'Historique (suivi temps réel).
+    function lancerTacheBackend(type, btn) {
+        const html0 = btn ? btn.innerHTML : null;
+        if (btn) { btn.disabled = true; btn.innerHTML = 'Lancement…'; }
+        return fetch('/api/projets/{{ projet.id }}/taches', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: type })
+        })
+        .then(r => r.json().then(d => ({ ok: r.ok, d })))
+        .then(({ ok, d }) => {
+            if (!ok) throw new Error(d.detail || 'Erreur');
+            window.location.href = '/projets/{{ projet.id }}/historique';
+        })
+        .catch(err => {
+            if (btn) { btn.disabled = false; btn.innerHTML = html0; }
+            alert('Erreur : ' + err.message);
+        });
+    }
+
+    // Bouton « Étude backend » du modal Dossier complet : stoppe le stepper et bascule en arrière-plan.
+    function passerEnBackend() {
+        _dosBackend = true;                 // stoppe le stepper frontend après l'étape en cours
+        _dosChronoStop();
+        lancerTacheBackend('dossier_complet', document.getElementById('btn-dos-backend'));
+    }
 
     function apdLancer() {
         apdUrl = null;

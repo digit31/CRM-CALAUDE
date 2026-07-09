@@ -197,6 +197,13 @@
                     </svg>
                     Folios (Plans)
                 </a>
+
+                <a href="/projets/{{ projet.id }}/historique" class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 {% block nav_historique_class %}text-brand-100 hover:bg-white/10 hover:text-white{% endblock %}">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Historique
+                </a>
             </div>
             {% endif %}
         </nav>
