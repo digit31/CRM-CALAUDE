@@ -82,7 +82,7 @@ Tableau de Bord
         <div class="overflow-x-auto">
             <table class="w-full text-left">
                 <thead>
-                    <tr class="bg-slate-50/80 text-slate-500 text-xs uppercase tracking-wider">
+                    <tr class="bg-slate-50/80 text-slate-500 text-xs uppercase tracking-wider whitespace-nowrap">
                         <th class="px-6 py-3.5 font-semibold">Réf.</th>
                         <th class="px-6 py-3.5 font-semibold">Nom du Projet</th>
                         <th class="px-6 py-3.5 font-semibold">Client</th>
@@ -129,11 +129,11 @@ Tableau de Bord
                         <td class="px-6 py-4">
                             {% set _te = types_etude.get(projet.id, "APD FO") %}
                             {% if "DOE" in _te|upper %}
-                            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-200" title="DOE FO — Dossier des Ouvrages Exécutés (câble / NETGEO)">
+                            <span class="inline-flex items-center gap-1.5 whitespace-nowrap px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-200" title="DOE FO — Dossier des Ouvrages Exécutés (câble / NETGEO)">
                                 <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>DOE FO
                             </span>
                             {% else %}
-                            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-brand-50 text-brand-700 border border-brand-200" title="APD FO — Avant-Projet Détaillé">
+                            <span class="inline-flex items-center gap-1.5 whitespace-nowrap px-2.5 py-1 rounded-full text-xs font-semibold bg-brand-50 text-brand-700 border border-brand-200" title="APD FO — Avant-Projet Détaillé">
                                 <span class="w-1.5 h-1.5 rounded-full bg-brand-500"></span>APD FO
                             </span>
                             {% endif %}
