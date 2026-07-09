@@ -194,7 +194,7 @@ def supprimer_client(db: Session, client_id: int) -> bool:
     return False
 
 def maj_nomenclature_client(db: Session, client_id: int, nomenclature: dict):
-    client = db.query(Client).filter(Client.id == client_id).first()
+    client = db.query(models.Client).filter(models.Client.id == client_id).first()
     if client:
         client.nomenclature = nomenclature
         db.commit()

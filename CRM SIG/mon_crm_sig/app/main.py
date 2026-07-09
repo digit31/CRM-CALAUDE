@@ -1096,15 +1096,24 @@ async def api_upload_shapefile(
 
     # 1. Sauvegarder TOUS les fichiers uploadés sur le disque d'abord
     chemins_shp = []
+    dossier_input_abs = os.path.abspath(dossier_input)
     for fichier in fichiers:
-        chemin_dest = os.path.join(dossier_input, fichier.filename)
+        # Assainir le nom (anti path-traversal) : on ne garde que le nom de base,
+        # ce qui neutralise « ../ », « ..\ » et les chemins absolus.
+        nom_fichier = os.path.basename((fichier.filename or "").replace("\\", "/")).strip()
+        if not nom_fichier or nom_fichier in (".", ".."):
+            continue
+        chemin_dest = os.path.join(dossier_input, nom_fichier)
+        if not os.path.abspath(chemin_dest).startswith(dossier_input_abs + os.sep):
+            logger.warning(f"Upload refusé (nom de fichier suspect) : {fichier.filename!r}")
+            continue
         with open(chemin_dest, "wb") as f:
             contenu = await fichier.read()
             f.write(contenu)
         logger.info(f"Fichier sauvegardé : {chemin_dest}")
 
         # Collecter tous les .shp trouvés
-        if fichier.filename.lower().endswith(".shp"):
+        if nom_fichier.lower().endswith(".shp"):
             chemins_shp.append(chemin_dest)
 
     # 2. Pour CHAQUE .shp trouvé, créer une couche dans la BDD

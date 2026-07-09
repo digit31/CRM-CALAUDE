@@ -112,10 +112,14 @@ def _up(row, champ):
 
 
 def _num(row, champ):
+    x = row.get(champ)
+    if x is None:
+        return None
     try:
-        return float(row.get(champ))
+        f = float(x)
     except (TypeError, ValueError):
         return None
+    return None if f != f else f   # f != f => NaN (champ numérique vide) -> None
 
 
 # ---------------------------------------------------------------------------

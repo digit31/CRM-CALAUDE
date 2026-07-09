@@ -1008,11 +1008,14 @@
                     ${data.nom_couche} <span class="text-slate-400 font-normal ml-2">(${data.nb_total} entités)</span>
                 `;
                 
+                // Échappement HTML des données SHP (anti-XSS : valeurs et noms de colonnes du DBF)
+                const escHtml = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
                 // En-têtes
                 const thead = document.getElementById('table-head');
                 let headHtml = '<tr>';
                 data.colonnes.forEach(col => {
-                    headHtml += '<th class="px-4 py-3 font-bold text-slate-700 border-b border-slate-200">' + col + '</th>';
+                    headHtml += '<th class="px-4 py-3 font-bold text-slate-700 border-b border-slate-200">' + escHtml(col) + '</th>';
                 });
                 if (estLivrable) {
                     headHtml += '<th class="px-3 py-3 font-bold text-slate-700 border-b border-slate-200 text-center">Actions</th>';
@@ -1039,9 +1042,9 @@
                             bodyHtml += '<td class="px-4 py-2"><span class="text-slate-300">-</span></td>';
                         } else if (estDoe && !estExclu && DOE_COLS.indexOf(col) !== -1) {
                             // Attribut renseigné par le CRM (FCI / dates TVX) -> pastille verte
-                            bodyHtml += '<td class="px-4 py-2"><span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200" title="Renseigné par le CRM (DOE FO)"><span class="w-1.5 h-1.5 mr-1.5 bg-emerald-500 rounded-full"></span>' + raw + '</span></td>';
+                            bodyHtml += '<td class="px-4 py-2"><span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200" title="Renseigné par le CRM (DOE FO)"><span class="w-1.5 h-1.5 mr-1.5 bg-emerald-500 rounded-full"></span>' + escHtml(raw) + '</span></td>';
                         } else {
-                            bodyHtml += '<td class="px-4 py-2 ' + (estExclu ? 'text-slate-400 italic' : 'text-slate-600') + '">' + raw + '</td>';
+                            bodyHtml += '<td class="px-4 py-2 ' + (estExclu ? 'text-slate-400 italic' : 'text-slate-600') + '">' + escHtml(raw) + '</td>';
                         }
                     });
                     if (estLivrable) {
