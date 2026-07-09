@@ -1231,13 +1231,16 @@ async def api_upload_shapefile(
 
 
 def _chemins_livrables_apd(projet) -> str:
-    """Dossier SHAPE des livrables APD FO (même convention que la génération 'shape')."""
+    """Dossier SHAPE des livrables (source de vérité). Nommé selon le TYPE d'étude :
+    ``DOE_FO/DOE_HTL`` pour une étude DOE FO, ``APD_FO/APD_HTL`` sinon — pour ne
+    plus ranger un livrable DOE FO dans un dossier « APD_FO »."""
     from datetime import datetime
     date_str = datetime.utcnow().strftime("%y%m%d")
     ref_propre = (projet.reference or f"AFF_{projet.id}").replace("-", "_")
     base_doe = os.path.join(projet.chemin_dossier, "04_Livrables_DOE")
-    dossier_global = os.path.join(base_doe, f"APD_FO_{ref_propre}_{date_str}")
-    dossier_carto = os.path.join(dossier_global, f"APD_HTL_{ref_propre}_02_{date_str}")
+    pref = "DOE" if _type_etude_projet(projet).upper().startswith("DOE") else "APD"
+    dossier_global = os.path.join(base_doe, f"{pref}_FO_{ref_propre}_{date_str}")
+    dossier_carto = os.path.join(dossier_global, f"{pref}_HTL_{ref_propre}_02_{date_str}")
     return os.path.join(dossier_carto, "SHAPE")
 
 
@@ -1263,8 +1266,11 @@ def _trouver_dossier_shape(projet) -> str:
     sinon le chemin par défaut (date du jour)."""
     import glob
     base_doe = os.path.join(projet.chemin_dossier, "04_Livrables_DOE")
-    cands = [c for c in glob.glob(os.path.join(base_doe, "APD_FO_*", "APD_HTL_*", "SHAPE"))
-             if os.path.isdir(c)]
+    # APD FO (APD_HTL) ET DOE FO (DOE_HTL) — pas le livrable NETGEO (DOE_NETGEO/03.3_Shapes)
+    cands = [c for c in (
+        glob.glob(os.path.join(base_doe, "APD_FO_*", "APD_HTL_*", "SHAPE"))
+        + glob.glob(os.path.join(base_doe, "DOE_FO_*", "DOE_HTL_*", "SHAPE"))
+    ) if os.path.isdir(c)]
     if cands:
         cands.sort(key=os.path.getmtime, reverse=True)
         for c in cands:
