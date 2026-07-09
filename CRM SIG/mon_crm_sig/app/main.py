@@ -878,6 +878,28 @@ async def api_maj_type_etude(projet_id: int, request: Request, db: Session = Dep
     return JSONResponse({"type_etude": _type_etude_projet(projet)})
 
 
+@app.post("/api/projets/{projet_id}/ouvrir-dossier")
+def api_ouvrir_dossier(projet_id: int, db: Session = Depends(get_db)):
+    """Ouvre le dossier d'enregistrement du projet dans l'explorateur de fichiers.
+    L'application tournant en LOCAL, l'ouverture se fait sur la machine de l'utilisateur."""
+    projet = crm_service.obtenir_projet(db, projet_id)
+    if not projet:
+        raise HTTPException(status_code=404, detail="Projet non trouvé")
+    dossier = projet.chemin_dossier
+    if not dossier or not os.path.isdir(dossier):
+        raise HTTPException(status_code=404, detail="Dossier du projet introuvable sur le disque.")
+    try:
+        if hasattr(os, "startfile"):            # Windows
+            os.startfile(dossier)               # noqa: S606 (appli locale, chemin maîtrisé)
+        else:                                   # macOS / Linux
+            import subprocess, sys as _sys
+            subprocess.Popen(["open" if _sys.platform == "darwin" else "xdg-open", dossier])
+        return JSONResponse({"message": "Dossier ouvert.", "path": dossier})
+    except Exception as e:
+        logger.error(f"Ouverture du dossier du projet {projet_id} : {e}")
+        raise HTTPException(status_code=500, detail=f"Impossible d'ouvrir le dossier : {e}")
+
+
 @app.get("/clients", response_class=HTMLResponse)
 def page_clients(request: Request, db: Session = Depends(get_db)):
     """Page CRM : Gestion des clients."""
