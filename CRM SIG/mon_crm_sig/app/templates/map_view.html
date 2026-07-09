@@ -156,7 +156,8 @@
     <!-- ============ ZONE PRINCIPALE (ONGLETS) ============ -->
     <div class="flex-1 flex flex-col gap-2 overflow-hidden">
         
-        <!-- Navigation des onglets -->
+        <!-- Navigation des onglets + accès Console Étude (haut-droite) -->
+        <div class="flex items-center justify-between gap-3">
         <div class="flex gap-2 p-1 bg-slate-100/80 rounded-lg w-max border border-slate-200">
             <button onclick="switchTab('map-tab')" id="btn-map-tab" class="px-5 py-2 text-sm font-semibold rounded-md bg-white text-brand-700 shadow-sm transition">
                 <div class="flex items-center gap-2">
@@ -191,6 +192,12 @@
                 Édition Livrables
             </button>
             {% endif %}
+        </div>
+            <a href="/projets/{{ projet.id }}/console" title="Ouvrir la Console Étude"
+               class="inline-flex items-center gap-1.5 bg-slate-800 text-white hover:bg-slate-900 font-semibold text-sm py-2 px-4 rounded-lg shadow-sm transition-all active:scale-95 whitespace-nowrap flex-shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                Console Étude
+            </a>
         </div>
 
         <!-- CONTENU CARTE -->
