@@ -900,6 +900,109 @@ def api_ouvrir_dossier(projet_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Impossible d'ouvrir le dossier : {e}")
 
 
+# Longueur (mètres, Lambert-93) par couche linéaire.
+#   · SUPPORT.LGR_REEL   = longueur GÉOMÉTRIQUE du tronçon  -> recalculable/écrasable.
+#   · CABLES.LONGUEUR_R  = longueur RÉELLE du câble (inclut le mou : lovES, descentes,
+#                          coils) -> volontairement > longueur 2D : on VÉRIFIE l'écart
+#                          mais on N'ÉCRASE PAS (sinon on détruit la longueur réelle).
+_LONGUEUR_CHAMP = {"CABLES": "LONGUEUR_R", "SUPPORT": "LGR_REEL"}
+_LONGUEUR_ECRIRE = {"CABLES": False, "SUPPORT": True}
+
+
+@app.post("/api/projets/{projet_id}/maj-longueurs")
+def api_maj_longueurs(projet_id: int, db: Session = Depends(get_db)):
+    """Vérifie les longueurs des couches linéaires du livrable par rapport à la
+    géométrie (projection Lambert-93 = mètres).
+
+    · SUPPORT (LGR_REEL = longueur géométrique) : recalculé et écrit dans le SHP.
+    · CÂBLES (LONGUEUR_R = longueur réelle, avec mou) : on signale l'écart réel/projeté
+      SANS écraser la valeur ; une longueur déclarée < tracé est marquée « anomalie ».
+
+    Active le verrou « MAJ Shapes » uniquement si des longueurs ont réellement été
+    écrites. Renvoie un rapport détaillé par couche."""
+    import geopandas as gpd
+    projet = crm_service.obtenir_projet(db, projet_id)
+    if not projet:
+        raise HTTPException(status_code=404, detail="Projet non trouvé")
+    dossier = _trouver_dossier_shape(projet)
+    if not dossier or not os.path.isdir(dossier):
+        raise HTTPException(status_code=400,
+                            detail="Aucun SHP livrable : générez d'abord les livrables.")
+    TOL = 0.5   # tolérance en mètres (sous laquelle une longueur est considérée conforme)
+    rapport = {"couches": [], "nb_ecrit": 0, "nb_anomalie": 0, "nb_total": 0}
+    for base, champ in _LONGUEUR_CHAMP.items():
+        p = os.path.join(dossier, f"{base}.shp")
+        if not os.path.exists(p):
+            continue
+        ecrire = _LONGUEUR_ECRIRE.get(base, False)
+        try:
+            g = gis_handler.lire_shapefile(p)          # géométries d'origine (2154 attendu)
+        except Exception as e:
+            rapport["couches"].append({"couche": base, "erreur": str(e)})
+            continue
+        # copie en CRS métrique pour mesurer en mètres (sans toucher aux géométries écrites)
+        g_m = g
+        try:
+            if g.crs is None:
+                g_m = g.set_crs(epsg=2154)
+            elif (g.crs.to_epsg() or 0) != 2154:
+                g_m = g.to_crs(epsg=2154)
+        except Exception:
+            g_m = g
+        if champ not in g.columns:
+            g[champ] = None
+        ecarts, n_ecrit, n_anom = [], 0, 0
+        for i, row in g_m.iterrows():
+            geom = row.geometry
+            if geom is None or geom.is_empty:
+                continue
+            # longueur uniquement pour les géométries linéaires (un point aurait length=0
+            # et écraserait à tort une valeur métier -> on ignore le non-linéaire)
+            if geom.geom_type not in ("LineString", "MultiLineString"):
+                continue
+            L = round(float(geom.length), 1)
+            anc = g.at[i, champ]
+            try:
+                anc_f = None if anc in (None, "") else round(float(anc), 1)
+            except (TypeError, ValueError):
+                anc_f = None
+            if anc_f is not None and abs(anc_f - L) <= TOL:
+                continue                               # conforme
+            nom = (str(g.at[i, "NOM"]) if "NOM" in g.columns and g.at[i, "NOM"] not in (None, "")
+                   else str(g.at[i, "LIBELLE"]) if "LIBELLE" in g.columns and g.at[i, "LIBELLE"] not in (None, "")
+                   else f"#{i + 1}")
+            ec = {"nom": nom, "ancienne": anc_f, "projetee": L}
+            if ecrire:
+                g.at[i, champ] = L                     # SUPPORT : on écrit la longueur géométrique
+                ec["nouvelle"] = L
+                n_ecrit += 1
+            else:
+                # CÂBLE : signalement seul. Anomalie si la longueur déclarée est
+                # ABSENTE ou PLUS COURTE que le tracé (physiquement impossible).
+                ec["anomalie"] = (anc_f is None) or (anc_f < L - TOL)
+                if ec["anomalie"]:
+                    n_anom += 1
+            ecarts.append(ec)
+        if ecrire and n_ecrit:
+            g.to_file(p, encoding="utf-8")
+        rapport["couches"].append({
+            "couche": base, "champ": champ, "nb": int(len(g)),
+            "ecrire": ecrire, "nb_ecrit": n_ecrit,
+            "nb_ecart": len(ecarts), "nb_anomalie": n_anom,
+            "ecarts": ecarts[:300],
+        })
+        rapport["nb_ecrit"] += n_ecrit
+        rapport["nb_anomalie"] += n_anom
+        rapport["nb_total"] += int(len(g))
+    # « conforme » = rien à écrire ET aucune anomalie câble (le mou câble > tracé est normal)
+    rapport["conforme"] = (rapport["nb_ecrit"] == 0 and rapport["nb_anomalie"] == 0)
+    if rapport["nb_ecrit"] > 0:
+        _marquer_shapes_a_maj(projet)                  # MAJ Shapes obligatoire (livrables modifiés)
+    logger.info(f"MAJ longueurs projet {projet_id} : {rapport['nb_ecrit']} support(s) écrit(s), "
+                f"{rapport['nb_anomalie']} anomalie(s) câble sur {rapport['nb_total']} entités.")
+    return JSONResponse(rapport)
+
+
 @app.get("/clients", response_class=HTMLResponse)
 def page_clients(request: Request, db: Session = Depends(get_db)):
     """Page CRM : Gestion des clients."""

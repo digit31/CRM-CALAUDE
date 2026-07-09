@@ -214,6 +214,13 @@
                     Aucune couche sélectionnée
                 </h3>
                 <div id="table-actions" class="hidden flex gap-2">
+                    <button id="btn-maj-longueurs" onclick="majLongueurs()" title="Recalculer les longueurs des câbles et supports d'après la géométrie (projection)" class="bg-brand-100 text-brand-700 hover:bg-brand-200 px-3 py-1.5 rounded text-xs font-semibold flex items-center gap-1 transition">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
+                        </svg>
+                        Mettre à jour les longueurs
+                    </button>
                     <button id="btn-edit-table" onclick="toggleEditMode()" class="bg-amber-100 text-amber-700 hover:bg-amber-200 px-3 py-1.5 rounded text-xs font-semibold flex items-center gap-1 transition">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
@@ -403,6 +410,30 @@
         <div class="p-4 border-t border-slate-100 bg-slate-50/60 flex justify-end gap-2">
             <button onclick="fermerModalAnnexes()" class="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 border border-slate-200 rounded-lg transition">Plus tard</button>
             <button onclick="regenererDepuisAnnexes()" class="px-5 py-2 text-xs font-semibold bg-brand-600 text-white rounded-lg hover:bg-brand-700 shadow-sm transition">Régénérer les SHP maintenant</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== MODAL VÉRIFICATION DES LONGUEURS ===== -->
+<div id="modal-longueurs" class="fixed inset-0 glass-bg hidden z-50 flex items-center justify-center animate-fadeIn p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
+        <div class="flex items-start justify-between p-5 border-b border-slate-100">
+            <div class="flex items-start gap-3">
+                <div id="lng-icone" class="mt-0.5 flex-shrink-0 h-9 w-9 rounded-xl flex items-center justify-center bg-emerald-50 text-emerald-600">
+                    <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                </div>
+                <div>
+                    <h3 id="lng-titre" class="text-base font-bold text-slate-800">Vérification des longueurs</h3>
+                    <p id="lng-sous-titre" class="text-xs text-slate-500 mt-0.5">Longueurs comparées à la géométrie (projection Lambert-93, mètres).</p>
+                </div>
+            </div>
+            <button onclick="fermerModalLongueurs()" class="text-slate-400 hover:text-slate-600 transition p-1">
+                <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+        </div>
+        <div id="lng-contenu" class="p-5 space-y-4 overflow-y-auto"></div>
+        <div class="p-4 border-t border-slate-100 bg-slate-50/60 flex justify-end gap-2">
+            <button onclick="fermerModalLongueurs()" class="px-5 py-2 text-xs font-semibold bg-brand-600 text-white rounded-lg hover:bg-brand-700 shadow-sm transition">Fermer</button>
         </div>
     </div>
 </div>
@@ -1280,6 +1311,131 @@
             btn.classList.remove('bg-slate-600', 'hover:bg-slate-700');
             label.textContent = 'Créer les SHP (Livrables)';
         }
+    }
+
+    // ===== MISE À JOUR DES LONGUEURS (câbles / support d'après la géométrie) =====
+    function majLongueurs() {
+        const btn = document.getElementById('btn-maj-longueurs');
+        if (!btn || btn.disabled) return;
+        const html0 = btn.innerHTML;
+        btn.disabled = true;
+        btn.classList.add('opacity-60', 'cursor-wait');
+        btn.innerHTML = '<svg class="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Vérification…';
+        fetch('/api/projets/' + projetId + '/maj-longueurs', { method: 'POST' })
+            .then(r => r.json().then(d => ({ ok: r.ok, d })))
+            .then(({ ok, d }) => {
+                if (!ok) { alert((d && d.detail) || 'Erreur lors de la mise à jour des longueurs.'); return; }
+                afficherRapportLongueurs(d);
+                if (d.nb_ecrit > 0) {
+                    marquerLivrableModifie();                       // MAJ Shapes obligatoire (supports écrits)
+                    if (currentCoucheId) chargerAttributs(currentCoucheId);   // rafraîchir la table courante
+                }
+            })
+            .catch(e => alert('Erreur réseau : ' + e))
+            .finally(() => {
+                btn.disabled = false;
+                btn.classList.remove('opacity-60', 'cursor-wait');
+                btn.innerHTML = html0;
+            });
+    }
+
+    function afficherRapportLongueurs(d) {
+        const esc = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const fmt = (v) => (v === null || v === undefined) ? '—' : esc(v);
+        const icone = document.getElementById('lng-icone');
+        const titre = document.getElementById('lng-titre');
+        const sous = document.getElementById('lng-sous-titre');
+        const cont = document.getElementById('lng-contenu');
+        const NOMS = { CABLES: 'Câbles', SUPPORT: 'Supports' };
+
+        // ---- Bandeau de verdict ----
+        const setIcone = (bg, fg) => { icone.className = 'mt-0.5 flex-shrink-0 h-9 w-9 rounded-xl flex items-center justify-center ' + bg + ' ' + fg; };
+        if (d.nb_anomalie > 0) {
+            const pl = d.nb_anomalie > 1 ? 's' : '';
+            setIcone('bg-red-50', 'text-red-600');
+            titre.textContent = d.nb_anomalie + ' anomalie' + pl + ' de longueur (câble)';
+            sous.textContent = 'Longueur déclarée plus courte que le tracé — à corriger dans le SIG source.'
+                + (d.nb_ecrit > 0 ? ' ' + d.nb_ecrit + ' support(s) recalculé(s).' : '');
+        } else if (d.nb_ecrit > 0) {
+            const pl = d.nb_ecrit > 1 ? 's' : '';
+            setIcone('bg-amber-50', 'text-amber-600');
+            titre.textContent = d.nb_ecrit + ' longueur' + pl + ' de support recalculée' + pl;
+            sous.textContent = 'Écrites dans le SHP livrable — régénération des SHP à effectuer.';
+        } else {
+            setIcone('bg-emerald-50', 'text-emerald-600');
+            titre.textContent = 'Longueurs conformes';
+            sous.textContent = 'Les longueurs correspondent à la géométrie (projection).';
+        }
+
+        // ---- Détail par couche ----
+        let html = '';
+        (d.couches || []).forEach(c => {
+            const nom = NOMS[c.couche] || c.couche;
+            if (c.erreur) {
+                html += '<div class="rounded-xl border border-red-100 bg-red-50 p-3 text-xs text-red-700"><b>' + esc(nom) + '</b> — ' + esc(c.erreur) + '</div>';
+                return;
+            }
+            const ecrire = !!c.ecrire;                       // SUPPORT = recalcul ; CÂBLE = signalement
+            let etatTxt, etatCls, barCls;
+            if (ecrire) {
+                const ok = (c.nb_ecrit === 0);
+                etatTxt = ok ? '✓ conforme' : (c.nb_ecrit + ' recalculé' + (c.nb_ecrit > 1 ? 's' : ''));
+                etatCls = ok ? 'text-emerald-700' : 'text-amber-700';
+                barCls = ok ? 'bg-emerald-50' : 'bg-amber-50';
+            } else {
+                const anom = (c.nb_anomalie || 0);
+                if (anom > 0) { etatTxt = anom + ' anomalie' + (anom > 1 ? 's' : ''); etatCls = 'text-red-700'; barCls = 'bg-red-50'; }
+                else if (c.nb_ecart > 0) { etatTxt = 'mou normal (réel > tracé)'; etatCls = 'text-slate-500'; barCls = 'bg-slate-50'; }
+                else { etatTxt = '✓ cohérent'; etatCls = 'text-emerald-700'; barCls = 'bg-emerald-50'; }
+            }
+            html += '<div class="rounded-xl border border-slate-100 overflow-hidden">';
+            html += '<div class="flex items-center justify-between px-3 py-2 ' + barCls + '">'
+                + '<span class="text-xs font-bold text-slate-700">' + esc(nom) + ' <span class="font-normal text-slate-400">(' + c.nb + ')</span></span>'
+                + '<span class="text-xs font-semibold ' + etatCls + '">' + etatTxt + '</span></div>';
+            if (c.ecarts && c.ecarts.length) {
+                if (ecrire) {
+                    // Supports : Avant -> Après (m)
+                    html += '<div class="max-h-52 overflow-y-auto"><table class="w-full text-xs"><thead class="bg-slate-50 text-slate-500 sticky top-0"><tr>'
+                        + '<th class="py-1.5 px-2 text-left font-semibold">Élément</th>'
+                        + '<th class="py-1.5 px-2 text-right font-semibold">Avant</th>'
+                        + '<th class="py-1.5 px-2 text-right font-semibold">Après (m)</th></tr></thead><tbody>';
+                    c.ecarts.forEach(e => {
+                        html += '<tr class="border-t border-slate-100"><td class="py-1.5 px-2 text-slate-600">' + esc(e.nom) + '</td>'
+                            + '<td class="py-1.5 px-2 text-right text-slate-400">' + fmt(e.ancienne) + '</td>'
+                            + '<td class="py-1.5 px-2 text-right font-semibold text-slate-800">' + fmt(e.nouvelle) + '</td></tr>';
+                    });
+                    html += '</tbody></table></div>';
+                } else {
+                    // Câbles : Réel (LONGUEUR_R) vs Projeté 2D + écart (non écrasé)
+                    html += '<div class="max-h-52 overflow-y-auto"><table class="w-full text-xs"><thead class="bg-slate-50 text-slate-500 sticky top-0"><tr>'
+                        + '<th class="py-1.5 px-2 text-left font-semibold">Câble</th>'
+                        + '<th class="py-1.5 px-2 text-right font-semibold">Réel</th>'
+                        + '<th class="py-1.5 px-2 text-right font-semibold">Projeté (m)</th>'
+                        + '<th class="py-1.5 px-2 text-right font-semibold">Écart</th></tr></thead><tbody>';
+                    c.ecarts.forEach(e => {
+                        const dd = (e.ancienne === null || e.ancienne === undefined) ? null : Math.round((e.ancienne - e.projetee) * 10) / 10;
+                        const rowCls = e.anomalie ? 'bg-red-50/60' : '';
+                        const ddTxt = (dd === null) ? '—' : ((dd > 0 ? '+' : '') + dd);
+                        const ddCls = e.anomalie ? 'text-red-600 font-semibold' : 'text-slate-500';
+                        html += '<tr class="border-t border-slate-100 ' + rowCls + '"><td class="py-1.5 px-2 text-slate-600">'
+                            + (e.anomalie ? '<span title="Longueur déclarée < tracé">⚠ </span>' : '') + esc(e.nom) + '</td>'
+                            + '<td class="py-1.5 px-2 text-right ' + (e.anomalie ? 'text-red-600 font-semibold' : 'text-slate-700') + '">' + fmt(e.ancienne) + '</td>'
+                            + '<td class="py-1.5 px-2 text-right text-slate-400">' + fmt(e.projetee) + '</td>'
+                            + '<td class="py-1.5 px-2 text-right ' + ddCls + '">' + ddTxt + '</td></tr>';
+                    });
+                    html += '</tbody></table></div>';
+                    html += '<p class="px-3 py-2 text-[11px] text-slate-500 bg-slate-50/60 border-t border-slate-100">La longueur <b>réelle</b> des câbles (avec mou/lovES) n\'est pas écrasée ; seul l\'écart est signalé.</p>';
+                }
+            }
+            html += '</div>';
+        });
+        if (!html) html = '<p class="text-xs text-slate-500">Aucune couche linéaire (câbles / support) trouvée dans le livrable.</p>';
+        cont.innerHTML = html;
+        document.getElementById('modal-longueurs').classList.remove('hidden');
+    }
+
+    function fermerModalLongueurs() {
+        document.getElementById('modal-longueurs').classList.add('hidden');
     }
 
     function fermerModalConflit() {
