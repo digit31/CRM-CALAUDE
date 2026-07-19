@@ -12,8 +12,10 @@
   .folio-num {
     background: #1f4fd6; color: #fff; border: none; border-radius: 4px;
     font-weight: 700; font-size: 12px; padding: 1px 6px; box-shadow: 0 1px 3px rgba(0,0,0,.3);
+    max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .folio-num::before { display: none; }
+  .folio-row.is-active { outline: 2px solid #1f4fd6; outline-offset: -1px; }
 </style>
 {% endblock %}
 
@@ -23,7 +25,7 @@
   <div class="flex flex-wrap items-center gap-2 bg-white rounded-xl border border-slate-200 shadow-sm px-4 py-2.5">
     <div class="mr-auto">
       <p class="text-sm font-bold text-slate-800">Éditeur de folios</p>
-      <p class="text-[11px] text-slate-400">Dessinez les cadres à la main (outil rectangle, à droite) ou générez-les automatiquement. <span id="folio-count" class="font-semibold text-brand-600"></span></p>
+      <p class="text-[11px] text-slate-400">Dessinez les cadres (outil rectangle, à droite), nommez-les dans le panneau, puis enregistrez. <span id="folio-count" class="font-semibold text-brand-600"></span></p>
     </div>
     <button onclick="autoFolios()" id="btn-auto" class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg border border-brand-500 text-brand-700 hover:bg-brand-50 transition">
       <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zM14 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" /></svg>
@@ -33,16 +35,29 @@
       <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3" /></svg>
       Tout effacer
     </button>
-    <button onclick="enregistrerFolios()" id="btn-save" class="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg bg-brand-600 text-white hover:bg-brand-700 shadow-sm transition">
+    <button onclick="enregistrerFolios()" id="btn-save" class="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg bg-brand-600 text-white hover:bg-brand-700 shadow-sm transition active:scale-95">
       <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
       Enregistrer
     </button>
   </div>
-  <!-- Carte -->
-  <div class="flex-1 bg-white rounded-xl border border-slate-100 shadow-sm p-1.5 min-h-[300px]">
-    <div id="map-folios"></div>
+  <!-- Carte + panneau des folios -->
+  <div class="flex-1 flex gap-2 min-h-[300px]">
+    <div class="flex-1 bg-white rounded-xl border border-slate-100 shadow-sm p-1.5">
+      <div id="map-folios"></div>
+    </div>
+    <aside class="w-72 shrink-0 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
+      <div class="px-3 py-2.5 border-b border-slate-100">
+        <p class="text-sm font-bold text-slate-800">Folios / dispositions</p>
+        <p class="text-[11px] text-slate-400">Nommez chaque cadre. Cliquez le n° pour le localiser.</p>
+      </div>
+      <div id="folio-liste" class="flex-1 overflow-y-auto p-2 space-y-1.5"></div>
+      <div id="folio-vide" class="p-6 text-center text-xs text-slate-400">
+        Aucun folio.<br>Dessinez un cadre ou cliquez « Auto‑générer ».
+      </div>
+    </aside>
   </div>
 </div>
+<div id="folio-toast" class="hidden fixed bottom-6 right-6 z-[1200] px-4 py-3 rounded-lg text-sm font-medium shadow-lg"></div>
 {% endblock %}
 
 {% block scripts_extra %}
@@ -70,26 +85,79 @@
   });
   map.addControl(drawControl);
 
-  function renumeroter() {
-    let i = 0;
-    folios.eachLayer(l => {
-      i++;
-      l._folioNum = i;
-      const c = l.getBounds().getNorthEast();
-      l.unbindTooltip();
-      l.bindTooltip(String(i), { permanent: true, direction: 'left', className: 'folio-num', offset: [-2, 8] });
-      l.openTooltip(c);
-    });
-    document.getElementById('folio-count').textContent = i ? (i + ' folio' + (i > 1 ? 's' : '')) : 'Aucun folio';
+  function esc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+  // Étiquette permanente sur la carte : « n » ou « n · nom »
+  function _label(l){
+    const n = l._folioNum;
+    const nom = (l._folioNom || '').trim();
+    return nom ? (n + ' · ' + nom) : String(n);
+  }
+  function _tooltip(l){
+    const c = l.getBounds().getNorthEast();
+    l.unbindTooltip();
+    l.bindTooltip(_label(l), { permanent: true, direction: 'left', className: 'folio-num', offset: [-2, 8] });
+    l.openTooltip(c);
   }
 
-  map.on(L.Draw.Event.CREATED, e => { folios.addLayer(e.layer); renumeroter(); });
+  // Surbrillance temporaire d'un cadre (au clic sur sa ligne du panneau)
+  function _flash(l){
+    const o = { color: l.options.color, weight: l.options.weight, fillOpacity: l.options.fillOpacity };
+    l.setStyle({ color: '#d00000', weight: 4, fillOpacity: 0.12 });
+    setTimeout(() => l.setStyle(o), 1100);
+  }
+
+  // Reconstruit le panneau latéral (une ligne par folio, avec champ nom)
+  function rebuildPanel(){
+    const box = document.getElementById('folio-liste');
+    const layers = folios.getLayers();
+    box.innerHTML = '';
+    document.getElementById('folio-vide').classList.toggle('hidden', layers.length > 0);
+    document.getElementById('folio-liste').classList.toggle('hidden', layers.length === 0);
+    layers.forEach(l => {
+      const row = document.createElement('div');
+      row.className = 'folio-row flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 hover:bg-brand-50 px-2 py-1.5 transition';
+      row.dataset.n = l._folioNum;
+      const badge = document.createElement('button');
+      badge.type = 'button';
+      badge.className = 'shrink-0 w-6 h-6 grid place-items-center rounded bg-brand-600 text-white text-xs font-bold cursor-pointer hover:bg-brand-700';
+      badge.textContent = l._folioNum;
+      badge.title = 'Localiser ce folio';
+      badge.addEventListener('click', () => {
+        map.fitBounds(l.getBounds(), { padding: [60, 60], maxZoom: 19 });
+        _flash(l);
+        box.querySelectorAll('.folio-row').forEach(r => r.classList.remove('is-active'));
+        row.classList.add('is-active');
+      });
+      const inp = document.createElement('input');
+      inp.type = 'text';
+      inp.value = l._folioNom || '';
+      inp.placeholder = 'Nom du folio…';
+      inp.maxLength = 200;
+      inp.className = 'flex-1 min-w-0 bg-transparent text-sm text-slate-700 placeholder-slate-400 focus:outline-none';
+      inp.addEventListener('input', () => { l._folioNom = inp.value; _tooltip(l); });
+      row.appendChild(badge); row.appendChild(inp);
+      box.appendChild(row);
+    });
+  }
+
+  // Renumérote (1..N dans l'ordre du groupe) + rafraîchit étiquettes et panneau
+  function renumeroter(){
+    let i = 0;
+    folios.eachLayer(l => { i++; l._folioNum = i; if (l._folioNom == null) l._folioNom = ''; _tooltip(l); });
+    document.getElementById('folio-count').textContent = i ? (i + ' folio' + (i > 1 ? 's' : '')) : 'Aucun folio';
+    rebuildPanel();
+  }
+
+  map.on(L.Draw.Event.CREATED, e => { e.layer._folioNom = ''; folios.addLayer(e.layer); renumeroter(); });
   map.on(L.Draw.Event.DELETED, renumeroter);
   map.on(L.Draw.Event.EDITED, renumeroter);
 
   function _rectDepuis(f) {
-    return L.rectangle([[f.south, f.west], [f.north, f.east]],
+    const r = L.rectangle([[f.south, f.west], [f.north, f.east]],
       { color: '#1f4fd6', weight: 2, fillOpacity: 0.05 });
+    r._folioNom = f.nom || '';
+    return r;
   }
 
   // ----- Réseau (contexte) : géojson des couches livrables -----
@@ -117,7 +185,7 @@
     });
   }
 
-  // ----- Chargement initial : emprise + folios existants -----
+  // ----- Chargement initial : emprise + folios existants (avec leur nom) -----
   function chargerFolios() {
     fetch('/api/projets/' + projetId + '/folios')
       .then(r => r.json())
@@ -140,13 +208,14 @@
         folios.clearLayers();
         (d.folios || []).forEach(f => folios.addLayer(_rectDepuis(f)));
         renumeroter();
+        toast((d.folios || []).length + ' folio(s) proposé(s) — nommez-les puis enregistrez.');
       })
-      .catch(err => alert('Erreur : ' + err.message))
+      .catch(err => toast('Erreur : ' + err.message, 'error'))
       .finally(() => { btn.disabled = false; btn.classList.remove('opacity-50'); });
   }
 
   function effacerFolios() {
-    if (folios.getLayers().length && !confirm('Effacer tous les folios ?')) return;
+    if (folios.getLayers().length && !confirm('Effacer tous les folios ? (pensez à Enregistrer pour valider)')) return;
     folios.clearLayers(); renumeroter();
   }
 
@@ -154,7 +223,8 @@
     const liste = [];
     folios.eachLayer(l => {
       const b = l.getBounds();
-      liste.push({ id: l._folioNum, south: b.getSouth(), west: b.getWest(), north: b.getNorth(), east: b.getEast() });
+      liste.push({ id: l._folioNum, nom: (l._folioNom || '').trim(),
+                   south: b.getSouth(), west: b.getWest(), north: b.getNorth(), east: b.getEast() });
     });
     const btn = document.getElementById('btn-save');
     const txt = btn.innerHTML; btn.disabled = true; btn.textContent = 'Enregistrement…';
@@ -166,9 +236,19 @@
       .then(({ ok, d }) => {
         if (!ok) throw new Error(d.detail || 'Enregistrement impossible');
         btn.innerHTML = txt; btn.disabled = false;
-        alert(d.message || 'Folios enregistrés.');
+        toast(d.message || 'Folios enregistrés.');
       })
-      .catch(err => { btn.innerHTML = txt; btn.disabled = false; alert('Erreur : ' + err.message); });
+      .catch(err => { btn.innerHTML = txt; btn.disabled = false; toast('Erreur : ' + err.message, 'error'); });
+  }
+
+  function toast(msg, type){
+    const t = document.getElementById('folio-toast');
+    if (!t) return;
+    t.textContent = msg;
+    t.className = 'fixed bottom-6 right-6 z-[1200] px-4 py-3 rounded-lg text-sm font-medium shadow-lg ' +
+                  (type === 'error' ? 'bg-red-600 text-white' : 'bg-emerald-600 text-white');
+    t.classList.remove('hidden');
+    clearTimeout(window.__ft); window.__ft = setTimeout(() => t.classList.add('hidden'), 3500);
   }
 
   chargerReseau();

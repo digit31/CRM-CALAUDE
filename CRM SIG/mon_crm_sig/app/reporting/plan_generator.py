@@ -1118,26 +1118,36 @@ def _titre_lieu(couches):
 
 
 def _charger_folios(folios_shp, couches):
-    """[(id, (x0,y0,x1,y1) en 3857)] triés par id ; auto-génère si SHP absent."""
+    """[(id, (x0,y0,x1,y1) en 3857, nom)] triés par id ; auto-génère si SHP absent."""
     if folios_shp and os.path.exists(folios_shp):
         try:
             g = gpd.read_file(folios_shp)
             g = g.to_crs(3857) if g.crs else g
             col_id = "id" if "id" in g.columns else None
+            col_nom = next((c for c in ("NOM", "nom", "Nom") if c in g.columns), None)
             recs = []
             for i, (_, r) in enumerate(g.iterrows(), 1):
                 fid = r[col_id] if (col_id and r[col_id] == r[col_id]) else i
+                nom = ""
+                if col_nom:
+                    v = r[col_nom]
+                    if v is not None and v == v:          # exclut None et NaN
+                        nom = str(v).strip()
+                        if nom.lower() in ("none", "nan"):
+                            nom = ""
                 if r.geometry is not None:
-                    recs.append((int(float(fid)), tuple(r.geometry.bounds)))
+                    recs.append((int(float(fid)), tuple(r.geometry.bounds), nom))
             if recs:
                 recs.sort(key=lambda x: x[0])
                 # Renumérotation séquentielle 1..N : l'id affiché = l'index de page
                 # (évite toute divergence titre « FOLIO n/N » / cadre surligné si le
-                # SHP porte des id non contigus, ex. édité sous QGIS).
-                return [(i, b) for i, (_, b) in enumerate(recs, 1)]
+                # SHP porte des id non contigus, ex. édité sous QGIS). Le nom saisi
+                # est renvoyé BRUT (vide si non nommé) : l'éditeur affiche alors un
+                # champ vide, et les pages PDF n'affichent que le numéro.
+                return [(i, b, nom) for i, (_, b, nom) in enumerate(recs, 1)]
         except Exception as e:
             logger.warning(f"FOLIO_LIVRABLES illisible ({e}) — auto-génération.")
-    return _folios_corridor(couches)
+    return [(fid, b, "") for fid, b in _folios_corridor(couches)]
 
 
 def _folios_auto(couches, max_folios=8):
@@ -1285,13 +1295,16 @@ def _carte(ax, couches, ext, fond=True, natures=None, url=None, z_cap=19, cadast
     _dessiner_couches(ax, couches, x0, y0, x1, y1, _lw, _ms, natures=natures)
 
 
-def _rects_folios(ax, folios, courant=None):
-    for fid, b in folios:
+def _rects_folios(ax, folios, courant=None, avec_nom=False):
+    for fid, b, nom in folios:
         actif = (fid == courant)
         coul = _ROUGE_FOLIO if actif else _BLEU_FOLIO
         ax.add_patch(Rectangle((b[0], b[1]), b[2] - b[0], b[3] - b[1], fill=False,
                                edgecolor=coul, linewidth=_lw(1.1 if actif else 0.6), zorder=20))
-        ax.text(b[2] - (b[2] - b[0]) * 0.03, b[1] + (b[3] - b[1]) * 0.03, str(fid),
+        libelle = str(fid)
+        if avec_nom and nom and nom != f"Folio {fid}":
+            libelle = f"{fid} · {nom[:34]}"
+        ax.text(b[2] - (b[2] - b[0]) * 0.03, b[1] + (b[3] - b[1]) * 0.03, libelle,
                 fontsize=13, fontweight="bold", color=coul, ha="right", va="bottom",
                 zorder=21, path_effects=_tampon(0.8))
 
@@ -1383,7 +1396,7 @@ def _page_ensemble(couches, folios, titre, natures=None, code_projet=""):
     # Vue d'ensemble : fond ORTHOPHOTO seul (comme la réf. ENSIO) — pas de cadastre
     # à cette échelle (trop dense) ; le cadastre est réservé aux folios de détail.
     _carte(ax, couches, ext, fond=True, natures=natures, url=FOND_ORTHO_URL, z_cap=17)
-    _rects_folios(ax, folios)
+    _rects_folios(ax, folios, avec_nom=True)
     _barre_echelle(ax, *ext)
     # légende de référence (colonne unique, bande gauche étroite) + rose
     _legende_gauche(fig, couches, 1.0, 2.0, 46.0, 230.0, natures=natures, colonnes=1)
@@ -1393,7 +1406,7 @@ def _page_ensemble(couches, folios, titre, natures=None, code_projet=""):
 
 
 def _page_folio(couches, folios, ext_folio, num, total, emprise_glob, titre, natures=None,
-                code_projet="", opacite=1.0):
+                code_projet="", opacite=1.0, nom=""):
     fig = plt.figure(figsize=(_A3_L * MM, _A3_H * MM))
     # carte principale (droite) : layout FOLIO « Carte 1 »
     mx, my, mw, mh = 120.005, 0.3, 299.995, 266.535
@@ -1414,7 +1427,10 @@ def _page_folio(couches, folios, ext_folio, num, total, emprise_glob, titre, nat
     # à cette échelle réduite).
     _carte(axl, couches, ext_loc, fond=True, natures=natures, url=FOND_ORTHO_URL, z_cap=16)
     _rects_folios(axl, folios, courant=num)
-    _cartouche_folio(fig, titre, f"FOLIO {num}/{total}", code_projet=code_projet)
+    sous = f"FOLIO {num}/{total}"
+    if nom and nom != f"Folio {num}":
+        sous += " — " + (nom[:38] + "…" if len(nom) > 39 else nom)
+    _cartouche_folio(fig, titre, sous, code_projet=code_projet)
     return fig
 
 
@@ -1446,9 +1462,9 @@ def generer_folios_apd(dossier_shape: str, chemin_pdf: str, folios_shp: str = No
             pdf.savefig(fig, dpi=300)
         finally:
             plt.close(fig)
-        for i, (fid, ext) in enumerate(folios, 1):
+        for i, (fid, ext, nom) in enumerate(folios, 1):
             fig = _page_folio(couches, folios, ext, i, len(folios), emprise_glob, titre,
-                              natures=natures, code_projet=code_projet, opacite=opacite)
+                              natures=natures, code_projet=code_projet, opacite=opacite, nom=nom)
             try:
                 pdf.savefig(fig, dpi=300)
             finally:

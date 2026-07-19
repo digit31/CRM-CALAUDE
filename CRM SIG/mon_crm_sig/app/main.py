@@ -414,6 +414,25 @@ def _carte_generation(projet, type_, statut, message, duree_s=None, path="", lab
     })
 
 
+def _carte_attributs(projet, label, message):
+    """Archive une MISE À JOUR D'ATTRIBUTS du CRM comme carte d'historique
+    (``kind='attributs'``) — nomenclature, champs DOE, annexes, éditions,
+    longueurs. Rendue distinctement (crayon indigo) pour guider l'utilisateur
+    sur ce que le CRM a modifié sur ses SHP livrables."""
+    from datetime import datetime as _dtc
+    now = _dtc.now().isoformat(timespec="seconds")
+    try:
+        _ajouter_tache_hist(projet, {
+            "id": _uuid.uuid4().hex[:12], "projet_id": projet.id, "projet_nom": projet.nom,
+            "type": "maj_attributs", "kind": "attributs", "label": label,
+            "statut": "termine", "etapes": [], "nb_etapes": 1,
+            "debut": now, "fin": now, "duree_s": None,
+            "message": message, "resultat": {},
+        })
+    except Exception as e:
+        logger.warning(f"Carte MAJ attributs non écrite (projet {projet.id}) : {e}")
+
+
 def _snapshot_taches(projet_id):
     """Tâches ACTIVES (en cours/attente) du projet, copie pour lecture concurrente."""
     with _TACHES_LOCK:
@@ -966,15 +985,16 @@ _DOE_CHAMPS_LIVRABLE = {
 }
 
 
-def _maj_shp_livrables_doe(projet, date_tvx, fci, exclus):
+def _maj_shp_livrables_doe(projet, date_tvx, fci, exclus, dossier=None):
     """Répercute les champs DOE (dates TVX, ETAT, FCI) dans les SHP LIVRABLES
     (source de vérité lue par l'Édition Livrables / PDS / KMZ), afin que les
     valeurs saisies apparaissent bien sur les couches. Les lignes exclues
     (BPE/PT existants) restent INCHANGÉES (elles s'affichent grisées).
 
-    Renvoie le nombre de couches livrables mises à jour."""
+    Renvoie le nombre de couches livrables mises à jour.
+    ``dossier`` : dossier SHAPE cible explicite (sinon le plus récent valide)."""
     from app.reporting import doe_fo_generator as dfo
-    dossier = _trouver_dossier_shape(projet)
+    dossier = dossier or _trouver_dossier_shape(projet)
     if not dossier or not os.path.isdir(dossier):
         return 0
     exclus = exclus or {}
@@ -1058,8 +1078,8 @@ def api_folios_get(projet_id: int, db: Session = Depends(get_db)):
     shp = _folios_shp_projet(projet, dossier_shape)
     if shp:
         try:
-            for fid, b in pg._charger_folios(shp, couches):
-                folios.append({"id": fid, **_bbox_3857_vers_wgs(b)})
+            for fid, b, nom in pg._charger_folios(shp, couches):
+                folios.append({"id": fid, "nom": nom, **_bbox_3857_vers_wgs(b)})
         except Exception as e:
             logger.warning(f"Lecture folios projet {projet_id} : {e}")
     return JSONResponse({"extent": extent, "folios": folios})
@@ -1103,12 +1123,15 @@ async def api_folios_save(projet_id: int, request: Request, db: Session = Depend
     try:
         import geopandas as gpd
         from shapely.geometry import box
-        geoms, ids = [], []
+        geoms, ids, noms = [], [], []
         for i, f in enumerate(folios, 1):
             geoms.append(box(float(f["west"]), float(f["south"]),
                              float(f["east"]), float(f["north"])))
             ids.append(int(f.get("id", i)))
-        gdf = gpd.GeoDataFrame({"id": ids}, geometry=geoms, crs="EPSG:4326").to_crs(2154)
+            # Nom libre saisi dans l'éditeur ; vide si non nommé (le PDF applique
+            # alors le repli « Folio n » — cf. plan_generator._charger_folios).
+            noms.append(str(f.get("nom", "") or "").strip()[:200])
+        gdf = gpd.GeoDataFrame({"id": ids, "NOM": noms}, geometry=geoms, crs="EPSG:4326").to_crs(2154)
         gdf.to_file(os.path.join(dossier, "FOLIO_LIVRABLES.shp"), encoding="utf-8")
     except Exception as e:
         logger.error(f"Enregistrement folios projet {projet_id} : {e}")
@@ -1446,8 +1469,7 @@ def api_maj_longueurs(projet_id: int, db: Session = Depends(get_db)):
                     + (f" ; {rapport['nb_anomalie']} anomalie(s) câble" if rapport['nb_anomalie'] else ""))
         try:
             crm_service.enregistrer_log(db, projet.id, "Mise à jour des longueurs", details=_msg_maj)
-            _carte_generation(projet, "maj_longueurs", "termine", _msg_maj,
-                              label="Mise à jour des longueurs")
+            _carte_attributs(projet, "Mise à jour des longueurs", _msg_maj)
         except Exception:
             pass
     logger.info(f"MAJ longueurs projet {projet_id} : {rapport['nb_ecrit']} support(s) écrit(s), "
@@ -2249,6 +2271,12 @@ async def api_appliquer_propositions(projet_id: int, couche_id: int, request: Re
                 except Exception as e:
                     logger.warning(f"Répercussion nomenclature au livrable {base} échouée : {e}")
 
+        if n and projet:
+            champs = sorted({str(ch.get("champ")) for ch in changements if ch.get("champ")})
+            _carte_attributs(projet, "Nomenclature appliquée",
+                             f"{n} attribut(s) mis à jour"
+                             + (f" ({', '.join(champs)})" if champs else "")
+                             + f" sur {couche.nom}.")
         return JSONResponse({"message": f"{n} valeur(s) appliquée(s).", "nb": n})
     except HTTPException:
         raise
@@ -2473,8 +2501,26 @@ def _generer_shapes_livrables(projet, db, mode="overwrite"):
                 systeme_projection=str(meta['crs']) if meta['crs'] else "4326",
                 couleur="#ff0000"))
     db.commit()
-    _enrichir_pt_depuis_annexes(projet, dossier_sortie)   # annexes C6/C7 -> PT
+    n_annexes = _enrichir_pt_depuis_annexes(projet, dossier_sortie)   # annexes C6/C7 -> PT
+    if n_annexes:
+        _carte_attributs(projet, "Annexes C6/C7 — appuis enrichis",
+                         f"{n_annexes} appui(s) PT enrichi(s) (NOM/CODE, nature des travaux) depuis les annexes Orange.")
     _effacer_shapes_a_maj(projet)                          # déverrouille les livrables
+    # DOE FO : ré-appliquer date TVX + FCI (saisis en Console -> doe.json) sur les
+    # SHP livrables qu'on vient de (re)générer. Sans ça, toute régénération SHP
+    # repart de l'input (où FCI est vide) et EFFACERAIT le FCI / la date TVX déjà
+    # posés — c'est la cause du « FCI absent du SHP livrable ».
+    if est_doe:
+        try:
+            date_tvx, fci = _doe_fo_params(projet, dossier_input)
+            nb_doe = _maj_shp_livrables_doe(projet, date_tvx, fci, _doe_exclus_projet(projet),
+                                            dossier=dossier_sortie)
+            if nb_doe:
+                _carte_attributs(projet, "Champs DOE appliqués aux livrables",
+                                 f"date TVX {date_tvx or '—'} · FCI sur {len(fci)} câble(s) · "
+                                 f"{nb_doe} couche(s) livrable(s) mise(s) à jour.")
+        except Exception as e:
+            logger.warning(f"Réapplication DOE (FCI/date TVX) après SHP : {e}")
     return fichiers, dossier_sortie
 
 
@@ -2770,6 +2816,13 @@ def api_generer_etude(projet_id: int, type_etude: str, mode: str = "overwrite", 
                 reponse["couches_a_completer"] = _couches_a_completer(projet, db, livrable=True)
             except Exception:
                 reponse["couches_a_completer"] = []
+        # Récap DOE NETGEO pour le modal de confirmation (date TVX + FCI par câble
+        # réellement appliqués aux SHP livrables).
+        if type_etude == "doe_fo_netgeo":
+            reponse["date_tvx"] = date_tvx
+            reponse["nb_liv"] = nb_liv
+            reponse["cables_fci"] = [{"nom": k, "fci": v} for k, v in (fci or {}).items()]
+            reponse["nb_fci"] = len(reponse["cables_fci"])
         # URL directe du livrable généré pour ouverture/téléchargement immédiat
         # côté navigateur (projects_data est servi sous /static).
         def _url_statique(chemin):
@@ -2828,6 +2881,8 @@ async def api_sauvegarder_attributs(request: Request, projet_id: int, couche_id:
             couche.nb_entites = len(nouvelles_donnees)
             db.commit()
             _marquer_shapes_a_maj(projet)  # Édition livrable -> MAJ Shapes requise
+            _carte_attributs(projet, "Attributs édités",
+                             f"Édition manuelle enregistrée sur {couche.nom} ({len(nouvelles_donnees)} entité(s)).")
             return JSONResponse({"message": "Attributs du livrable sauvegardés avec succès."})
         else:
             # C'est un input ! On sauvegarde dans le dossier Traitement
@@ -2867,6 +2922,8 @@ async def api_sauvegarder_attributs(request: Request, projet_id: int, couche_id:
                 nouvelle_couche_id = couche_existante.id
 
             _marquer_shapes_a_maj(projet)  # Édition livrable -> MAJ Shapes requise
+            _carte_attributs(projet, "Attributs édités",
+                             f"Édition enregistrée en livrable {nom_couche} ({len(nouvelles_donnees)} entité(s)).")
             return JSONResponse({"message": "Modifications enregistrées en tant que nouveau Livrable !", "nouvelle_couche_id": nouvelle_couche_id})
             
     except Exception as e:

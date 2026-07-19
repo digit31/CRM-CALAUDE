@@ -38,7 +38,27 @@
       .catch(() => {});
   };
 
+  // Carte « MISE À JOUR D'ATTRIBUTS » (nomenclature, champs DOE, annexes, éditions,
+  // longueurs) — rendu distinct (crayon indigo) pour guider l'utilisateur.
+  function cardAttr(t, isGlobal) {
+    const heure = fmtHeure(t.fin || t.debut);
+    const projChip = (isGlobal && t.projet_nom) ? '<span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold bg-brand-50 text-brand-600 ml-2 align-middle">' + esc(t.projet_nom) + '</span>' : '';
+    const pill = '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold flex-shrink-0 bg-indigo-100 text-indigo-700">MAJ attributs</span>';
+    const pencil = '<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>';
+    return '<div class="bg-white rounded-xl border border-indigo-100 shadow-sm p-4">'
+      + '<div class="flex items-start gap-3">'
+      + '<div class="mt-0.5 flex-shrink-0 h-8 w-8 rounded-lg flex items-center justify-center bg-indigo-50 text-indigo-600">' + pencil + '</div>'
+      + '<div class="flex-1 min-w-0">'
+      + '<div class="flex items-start justify-between gap-3">'
+      + '<p class="font-semibold text-slate-800 text-sm flex items-center gap-2 flex-wrap min-w-0"><span>' + esc(t.label) + '</span>' + pill + projChip + '</p>'
+      + '<div class="text-right flex-shrink-0">' + (heure ? '<p class="text-[11px] text-slate-400">' + heure + '</p>' : '') + '</div>'
+      + '</div>'
+      + '<p class="text-xs mt-0.5"><span class="text-slate-500">' + esc(t.message || '') + '</span></p>'
+      + '</div></div></div>';
+  }
+
   function card(t, isGlobal) {
+    if (t.kind === 'attributs') return cardAttr(t, isGlobal);
     const m = STAT[t.statut] || STAT.en_cours;
     const pill = '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold flex-shrink-0 ' + m.pill + '">' + m.txt + '</span>';
     const active = ['en_cours', 'en_attente', 'en_pause'].includes(t.statut);
@@ -115,8 +135,33 @@
     const $secAct = O.secActives ? document.getElementById(O.secActives) : null;
     const $term = document.getElementById(O.terminees);
     const $vide = O.vide ? document.getElementById(O.vide) : null;
-    let prev = 0;
+    let prev = 0, filtre = 'tout', dernTerm = [];
     window.__histToast = O.toast || function () {};
+
+    // Barre de filtres : Tout / Générations / MAJ attributs
+    const estAttr = t => t.kind === 'attributs';
+    function chipCls(on) { return 'hist-filtre px-3 py-1 text-xs font-semibold rounded-full border transition ' + (on ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'); }
+    if ($term) {
+      const bar = document.createElement('div');
+      bar.className = 'flex items-center gap-1.5 mb-3';
+      bar.innerHTML = [['tout', 'Tout'], ['gen', 'Générations'], ['attr', 'MAJ attributs']]
+        .map(([k, l]) => '<button data-f="' + k + '" class="' + chipCls(k === 'tout') + '">' + l + '</button>').join('');
+      $term.parentNode.insertBefore(bar, $term);
+      bar.addEventListener('click', e => {
+        const b = e.target.closest('.hist-filtre'); if (!b) return;
+        filtre = b.dataset.f;
+        bar.querySelectorAll('.hist-filtre').forEach(x => x.className = chipCls(x.dataset.f === filtre));
+        renderTerm();
+      });
+    }
+    function renderTerm() {
+      let list = dernTerm;
+      if (filtre === 'gen') list = dernTerm.filter(t => !estAttr(t));
+      else if (filtre === 'attr') list = dernTerm.filter(estAttr);
+      if ($vide) $vide.classList.toggle('hidden', list.length > 0);
+      if ($term) $term.innerHTML = list.map(t => card(t, isGlobal)).join('');
+    }
+
     function charger() {
       fetch(O.endpoint + (O.endpoint.indexOf('?') >= 0 ? '&' : '?') + '_t=' + Date.now())
         .then(r => r.json())
@@ -124,9 +169,8 @@
           const act = d.actives || [];
           if ($secAct) $secAct.classList.toggle('hidden', act.length === 0);
           if ($act) $act.innerHTML = act.map(t => card(t, isGlobal)).join('');
-          const term = d.terminees || [];
-          if ($vide) $vide.classList.toggle('hidden', term.length > 0);
-          if ($term) $term.innerHTML = term.map(t => card(t, isGlobal)).join('');
+          dernTerm = d.terminees || [];
+          renderTerm();
           if (prev > 0 && act.length === 0) window.__histToast('Génération terminée.', 'ok');
           prev = act.length;
         }).catch(() => {});
