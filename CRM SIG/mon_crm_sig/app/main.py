@@ -162,6 +162,8 @@ def page_carte(request: Request, projet_id: int, db: Session = Depends(get_db)):
         return base not in bases_liv  # input affiché seulement sans jumeau livrable
 
     couches_affichees = [c for c in projet.couches if _affichee(c)]
+    # Ordre d'affichage réglé par glisser-déposer (persiste par projet).
+    couches_affichees = _trier_couches_par_ordre(couches_affichees, _couches_ordre_projet(projet))
     # Quelles couches portent les étiquettes (une seule par base : livrable si
     # présent, sinon input) — pour n'afficher le bouton toggle que là où il agit.
     couches_etiquettes = {
@@ -933,6 +935,29 @@ def _fond_opacite_projet(projet) -> float:
     return 1.0
 
 
+def _couches_ordre_projet(projet) -> list:
+    """Ordre d'affichage des couches sur la carte (liste d'ids), réglé par
+    glisser-déposer dans le panneau SIG. [] si non défini."""
+    p = os.path.join(projet.chemin_dossier, "02_Traitement", "couches_ordre.json")
+    try:
+        if os.path.exists(p):
+            import json as _json
+            with open(p, "r", encoding="utf-8") as f:
+                return [int(x) for x in ((_json.load(f) or {}).get("ordre") or [])]
+    except Exception:
+        pass
+    return []
+
+
+def _trier_couches_par_ordre(couches, ordre):
+    """Trie ``couches`` selon la liste d'ids ``ordre`` ; les couches absentes de
+    l'ordre gardent leur position d'origine, à la fin (tri stable)."""
+    if not ordre:
+        return couches
+    rang = {cid: i for i, cid in enumerate(ordre)}
+    return sorted(couches, key=lambda c: rang.get(c.id, len(ordre) + 1))
+
+
 def _doe_fo_params(projet, dossier_input):
     """(date_tvx aaaammjj, {cable_nom: fci}) pour le DOE FO. Priorité à la saisie
     Console (02_Traitement/doe.json) ; à défaut, date depuis le nom du .txt DATETVX."""
@@ -1177,6 +1202,27 @@ async def api_fond_opacite(projet_id: int, request: Request, db: Session = Depen
     with open(os.path.join(d, "fond.json"), "w", encoding="utf-8") as f:
         _json.dump({"opacite": op}, f)
     return JSONResponse({"message": "Opacité du fond enregistrée.", "opacite": op})
+
+
+@app.post("/api/projets/{projet_id}/couches-ordre")
+async def api_couches_ordre(projet_id: int, request: Request, db: Session = Depends(get_db)):
+    """Enregistre l'ordre d'affichage des couches sur la carte (liste d'ids),
+    réglé par glisser-déposer dans le panneau SIG. La couche en tête de liste est
+    dessinée au-dessus (comme QGIS)."""
+    projet = crm_service.obtenir_projet(db, projet_id)
+    if not projet:
+        raise HTTPException(status_code=404, detail="Projet non trouvé")
+    try:
+        body = await request.json()
+        ordre = [int(x) for x in (body.get("ordre") or [])]
+    except Exception:
+        raise HTTPException(status_code=400, detail="Ordre des couches invalide.")
+    d = os.path.join(projet.chemin_dossier, "02_Traitement")
+    os.makedirs(d, exist_ok=True)
+    import json as _json
+    with open(os.path.join(d, "couches_ordre.json"), "w", encoding="utf-8") as f:
+        _json.dump({"ordre": ordre}, f)
+    return JSONResponse({"message": "Ordre des couches enregistré.", "nb": len(ordre)})
 
 
 @app.get("/api/projets/{projet_id}/doe-fo")
@@ -2752,12 +2798,25 @@ def api_generer_etude(projet_id: int, type_etude: str, mode: str = "overwrite", 
             message = "Rapport HTL (PDF) généré."
 
         elif type_etude == "doe_fo_syno":
-            open(os.path.join(dossier_global, f"DOE_SYNO_{ref_propre}_{date_str}.pdf"), "a").close()
-            message = "Plan Synoptique (PDF) généré."
+            # Plan Synoptique DOE : MÊME génération que l'APD FO (design ENSIO, 100 %
+            # backend) depuis les SHP livrables DOE — schéma NETGEO, colonnes
+            # compatibles (NOM/CODE/CAPACITE/NB_TUBE…). Plus de mock vide.
+            from app.reporting import plan_generator
+            import glob as _glob
+            dossier_shape = _trouver_dossier_shape(projet)
+            if not (os.path.isdir(dossier_shape) and _glob.glob(os.path.join(dossier_shape, "*.shp"))):
+                raise HTTPException(status_code=400,
+                    detail="Générez d'abord les SHP livrables DOE (Dossier NETGEO ou Régénérer SHP) avant le Plan Synoptique.")
+            chemin_pdf = os.path.join(dossier_global, f"DOE_SYNO_{ref_propre}_{date_str}.pdf")
+            plan_generator.generer_plan_syno(dossier_shape, chemin_pdf)
+            message = "Plan Synoptique DOE (PDF) généré depuis les SHP livrables."
 
         elif type_etude == "doe_fo_pds":
-            open(os.path.join(dossier_global, f"DOE_{ref_propre}_PDS_{date_str}.xlsx"), "a").close()
-            message = "Plan de Câblage / Boîte (XLSX) généré."
+            # Plan de câblage / Boîte DOE : MÊME génération PDS que l'APD FO, depuis
+            # les SHP livrables DOE (_trouver_dossier_shape -> dossier SHAPE DOE).
+            chemin_pds = os.path.join(dossier_global, f"DOE_{ref_propre}_PDS_{date_str}.xlsx")
+            _c, _nb = _pds_livrable(db, projet, chemin_pds)
+            message = f"Plan de Câblage / Boîte DOE (XLSX) généré ({_nb} onglet(s))."
 
         elif type_etude == "doe_fo_netgeo":
             # Bouton « Dossier NETGEO (SHP/KMZ/DWG) » : point d'entrée UNIQUE de

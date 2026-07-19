@@ -212,9 +212,12 @@
                     Historique
                 </a>
             </div>
+
+            {# Bloc contextuel projet (import + gestion des livrables — page carte) #}
+            {% block sidebar_projet %}{% endblock %}
             {% endif %}
         </nav>
-        
+
         <!-- Version Info -->
         <div class="p-4 border-t border-brand-800/50">
             <div class="flex items-center gap-2 text-xs text-brand-500">

@@ -16,7 +16,19 @@
 
     /* Marqueurs symbologie NETGEO (SVG) : pas de fond/bordure Leaflet par défaut */
     .leaflet-div-icon.sty-marker { background: transparent; border: none; }
+
+    /* Zone d'import version sombre (barre latérale) — liseré brand pour contraste */
+    .drop-zone-dark { border: 2px dashed rgba(94,234,212,0.32); background: rgba(45,212,191,0.05); transition: all 0.2s; }
+    .drop-zone-dark:hover { border-color: rgba(94,234,212,0.6); background: rgba(45,212,191,0.09); }
+    .drop-zone-dark.drag-over { border-color: #2dd4bf; background: rgba(45,212,191,0.16); }
+
+    /* Réordonnancement des couches (glisser-déposer) */
+    .couche-drag-handle { cursor: grab; touch-action: none; }
+    .couche-drag-handle:active { cursor: grabbing; }
+    .sortable-ghost { opacity: 0.35; }
+    .sortable-chosen { box-shadow: 0 6px 18px rgba(13,148,136,0.25); }
 </style>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 {% endblock %}
 
 {% block header_title %}
@@ -40,6 +52,65 @@
 </span>
 {% endblock %}
 
+{# ===== Barre latérale (sous « Projet courant ») : import SIG + gestion des livrables ===== #}
+{% block sidebar_projet %}
+<div class="mt-6 pt-4 border-t border-brand-700/50">
+    <p class="px-1 text-[10px] font-bold text-brand-300/80 uppercase tracking-widest mb-2.5 flex items-center gap-1.5">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+        </svg>
+        Import &amp; Livrables
+    </p>
+    <!-- Carte distincte (fond profond + liseré brand) : zone d'action à part des liens de nav -->
+    <div class="rounded-xl bg-brand-950/60 ring-1 ring-brand-700/60 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] p-2.5 space-y-2.5">
+        <!-- Zone d'import Shapefile -->
+        <form id="form-upload" action="/api/projets/{{ projet.id }}/upload-shp" method="POST" enctype="multipart/form-data">
+            <div id="drop-zone" class="drop-zone-dark rounded-lg p-3 text-center cursor-pointer"
+                 onclick="document.getElementById('file-input').click()">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mx-auto text-brand-300 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                <p class="text-[11px] text-brand-50 font-medium leading-tight">Glissez vos <b class="text-white">SHP</b>, la <b class="text-white">DATE TVX</b> (.txt), les <b class="text-white">annexes C6/C7</b></p>
+                <p class="text-[10px] text-brand-300/80 mt-1">ou cliquez — <span class="font-mono text-brand-200">AAAAMMJJ-DATETVX.txt</span></p>
+                <p id="file-names" class="text-[11px] text-emerald-300 font-semibold mt-1 hidden"></p>
+            </div>
+            <input type="file" id="file-input" name="fichiers" class="hidden" accept=".shp,.dbf,.shx,.prj,.cpg,.xlsx,.xlsm,.xls,.txt" multiple>
+            <button type="submit" id="btn-upload" class="w-full mt-2 bg-brand-500 text-white py-1.5 px-3 rounded-lg text-[11px] font-semibold hover:bg-brand-400 transition shadow-sm hidden">
+                Importer les fichiers
+            </button>
+        </form>
+
+        <!-- Gestion des livrables (séparée par un liseré) -->
+        <div class="border-t border-brand-800/70 pt-2.5 space-y-1.5">
+            <span class="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider {% if not shp_genere %}text-amber-300{% else %}text-brand-300{% endif %}">
+                {% if not shp_genere %}<span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>Livrables manquants{% else %}Gestion des livrables{% endif %}
+            </span>
+            <label class="flex items-center gap-2 text-[11px] text-brand-100">
+                <span class="font-semibold">Type</span>
+                <select id="type-etude-select" onchange="majTypeEtude(this.value)"
+                        class="flex-1 border border-brand-600/50 rounded-md px-2 py-1 text-[11px] bg-brand-900/70 text-white focus:ring-1 focus:ring-brand-400 focus:border-brand-400">
+                    <option class="text-slate-800" value="APD FO" {% if type_etude != 'DOE FO' %}selected{% endif %}>APD FO</option>
+                    <option class="text-slate-800" value="DOE FO" {% if type_etude == 'DOE FO' %}selected{% endif %}>DOE FO (NETGEO)</option>
+                </select>
+            </label>
+            <button onclick="creerShpDepuisIci()" id="btn-creer-shp-ici" class="w-full {% if not shp_genere %}bg-amber-500 hover:bg-amber-400 text-brand-950{% else %}bg-brand-600 hover:bg-brand-500 text-white{% endif %} font-bold py-1.5 px-3 rounded-lg text-[11px] flex items-center justify-center gap-1.5 shadow-sm transition active:scale-95">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    {% if not shp_genere %}
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0" />
+                    {% else %}
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 8H18.5" />
+                    {% endif %}
+                </svg>
+                <span id="btn-shp-label">{% if not shp_genere %}Créer les SHP{% else %}Régénérer SHP{% endif %} — {% if type_etude == 'DOE FO' %}DOE FO{% else %}APD FO{% endif %}</span>
+            </button>
+            <p id="type-etude-hint" class="text-[10px] leading-tight {% if type_etude == 'DOE FO' %}text-brand-300{% else %}text-brand-300/70{% endif %}">
+                {% if type_etude == 'DOE FO' %}Schéma <b class="text-brand-200">NETGEO</b> (POSE/FCI/dates).{% else %}Schéma <b class="text-brand-200">APD FO</b>.{% endif %}
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
 {% block content %}
 <div class="flex flex-col lg:flex-row h-full gap-4" style="height: calc(100vh - 120px);">
     
@@ -57,60 +128,15 @@
             </h3>
         </div>
         
-        <!-- Zone d'import Shapefile -->
-        <div class="p-3 border-b border-slate-100">
-            <form id="form-upload" action="/api/projets/{{ projet.id }}/upload-shp" method="POST" enctype="multipart/form-data">
-                <div id="drop-zone" class="drop-zone rounded-xl p-4 text-center cursor-pointer"
-                     onclick="document.getElementById('file-input').click()">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mx-auto text-slate-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                    </svg>
-                    <p class="text-xs text-slate-500 font-medium">Glissez vos <b>couches SIG</b> (.shp), la <b>DATE TVX</b> (.txt) et les <b>annexes Orange</b> (C6/C7 .xlsx)</p>
-                    <p class="text-xs text-slate-400 mt-1">ou cliquez pour parcourir — le .txt doit être nommé <span class="font-mono">AAAAMMJJ-DATETVX.txt</span></p>
-                    <p id="file-names" class="text-xs text-brand-600 font-semibold mt-2 hidden"></p>
-                </div>
-                <input type="file" id="file-input" name="fichiers" class="hidden" accept=".shp,.dbf,.shx,.prj,.cpg,.xlsx,.xlsm,.xls,.txt" multiple>
-                <button type="submit" id="btn-upload" class="w-full mt-2 bg-brand-600 text-white py-2 px-4 rounded-lg text-xs font-semibold hover:bg-brand-700 transition shadow-sm hidden">
-                    Importer les fichiers
-                </button>
-            </form>
-        </div>
-        
-        <!-- Action rapide Livrables -->
-        <div class="p-3 border-b border-slate-100 {% if not shp_genere %}bg-amber-50/50{% else %}bg-slate-50{% endif %} flex flex-col gap-1.5">
-            <span class="text-[10px] font-bold {% if not shp_genere %}text-amber-800{% else %}text-slate-500{% endif %} uppercase tracking-wider">
-                {% if not shp_genere %}Livrables Manquants{% else %}Gestion des Livrables{% endif %}
-            </span>
-            <!-- Type d'étude : détermine le gabarit des SHP livrables (APD FO ou DOE FO NETGEO) -->
-            <label class="flex items-center gap-2 text-[11px] text-slate-600">
-                <span class="font-semibold whitespace-nowrap">Type</span>
-                <select id="type-etude-select" onchange="majTypeEtude(this.value)"
-                        class="flex-1 border border-slate-300 rounded-md px-2 py-1 text-[11px] bg-white focus:ring-1 focus:ring-brand-500 focus:border-brand-500">
-                    <option value="APD FO" {% if type_etude != 'DOE FO' %}selected{% endif %}>APD FO</option>
-                    <option value="DOE FO" {% if type_etude == 'DOE FO' %}selected{% endif %}>DOE FO (NETGEO)</option>
-                </select>
-            </label>
-            <button onclick="creerShpDepuisIci()" id="btn-creer-shp-ici" class="w-full {% if not shp_genere %}bg-brand-600 hover:bg-brand-700{% else %}bg-slate-600 hover:bg-slate-700{% endif %} text-white font-bold py-2 px-3 rounded-lg text-xs flex items-center justify-center gap-1.5 shadow-sm transition transform active:scale-95">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    {% if not shp_genere %}
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0" />
-                    {% else %}
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 8H18.5" />
-                    {% endif %}
-                </svg>
-                <span id="btn-shp-label">{% if not shp_genere %}Créer les SHP{% else %}Régénérer SHP{% endif %} — {% if type_etude == 'DOE FO' %}DOE FO{% else %}APD FO{% endif %}</span>
-            </button>
-            <p id="type-etude-hint" class="text-[10px] leading-tight {% if type_etude == 'DOE FO' %}text-brand-600{% else %}text-slate-400{% endif %}">
-                {% if type_etude == 'DOE FO' %}Livrables au schéma <b>NETGEO</b> (POSE/FCI/dates).{% else %}Livrables au schéma <b>APD FO</b>.{% endif %}
-            </p>
-        </div>
-
-        <!-- Liste des couches -->
+        <!-- Liste des couches (réordonnables par glisser-déposer) -->
         <div class="flex-1 overflow-y-auto p-3 space-y-2" id="layers-list">
             {% for couche in couches_affichees %}
             <div class="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-200 hover:border-brand-300 transition group"
                  data-couche-id="{{ couche.id }}">
-                <div class="flex items-center gap-3">
+                <div class="flex items-center gap-2.5">
+                    <span class="couche-drag-handle text-slate-300 hover:text-slate-500 flex-shrink-0" title="Glisser pour réordonner — la couche du haut passe au-dessus sur la carte">
+                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 8h16M4 16h16" /></svg>
+                    </span>
                     <input type="checkbox" checked
                            class="layer-toggle w-4 h-4 text-brand-600 rounded border-slate-300 focus:ring-brand-500 cursor-pointer"
                            data-couche-id="{{ couche.id }}"
@@ -585,7 +611,14 @@
             .then(data => {
                 if (data.geojson) {
                     const geojsonData = JSON.parse(data.geojson);
+                    // Pane dédié par couche : son z-index (piloté par l'ordre de la
+                    // liste) fait passer TOUTE la couche — points ET lignes — au-dessus
+                    // ou en dessous des autres. Indispensable car bringToFront ne
+                    // fonctionne pas sur les marqueurs (z-ordre latitude par défaut).
+                    const paneName = 'pane-couche-' + coucheId;
+                    if (!map.getPane(paneName)) map.createPane(paneName);
                     const layer = L.geoJSON(geojsonData, {
+                        pane: paneName,
                         style: function(feature) {
                             const s = feature.properties && feature.properties._sty;
                             if (s && s.g === 'ln') return { color: s.coul, weight: Math.max(1.5, (s.larg || 0.4) * 2.5), opacity: 1 };
@@ -594,8 +627,9 @@
                         },
                         pointToLayer: function(feature, latlng) {
                             const s = feature.properties && feature.properties._sty;
-                            if (s && s.g === 'pt') return L.marker(latlng, { icon: _iconeForme(s) });
+                            if (s && s.g === 'pt') return L.marker(latlng, { icon: _iconeForme(s), pane: paneName });
                             return L.circleMarker(latlng, {
+                                pane: paneName,
                                 radius: 6, fillColor: couleur || data.couleur,
                                 color: '#fff', weight: 1, opacity: 1, fillOpacity: 0.8
                             });
@@ -628,6 +662,7 @@
                     }).addTo(map);
                     
                     loadedLayers[coucheId] = layer;
+                    appliquerOrdreCarte();   // respecte l'ordre de la liste (z-index carte)
                     // Zoomer sur l'étendue des données (sauf couche vide : bounds invalides)
                     const bounds = layer.getBounds();
                     if (bounds && bounds.isValid()) {
@@ -637,6 +672,40 @@
             })
             .catch(err => console.error('Erreur chargement couche:', err));
     }
+
+    // ===== RÉORDONNANCEMENT DES COUCHES (glisser-déposer, façon QGIS) =====
+    // La couche EN HAUT de la liste est dessinée AU-DESSUS sur la carte.
+    function _ordreCouchesDOM() {
+        return Array.from(document.querySelectorAll('#layers-list > [data-couche-id]'))
+            .map(el => el.getAttribute('data-couche-id'));
+    }
+    function appliquerOrdreCarte() {
+        // Le z-index du pane de chaque couche suit l'ordre de la liste : la couche
+        // EN HAUT reçoit le z le plus élevé -> dessinée au-dessus (points ET lignes),
+        // automatiquement, sans avoir à recocher la couche.
+        const ids = _ordreCouchesDOM();
+        const n = ids.length;
+        ids.forEach(function (id, i) {
+            const pane = map.getPane('pane-couche-' + id);
+            if (pane) pane.style.zIndex = String(400 + (n - i));
+        });
+    }
+    function sauverOrdreCouches() {
+        fetch('/api/projets/' + projetId + '/couches-ordre', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ordre: _ordreCouchesDOM().map(Number) })
+        }).catch(function () {});
+    }
+    (function () {
+        const listEl = document.getElementById('layers-list');
+        if (listEl && window.Sortable) {
+            new Sortable(listEl, {
+                handle: '.couche-drag-handle', animation: 150,
+                ghostClass: 'sortable-ghost', chosenClass: 'sortable-chosen',
+                onEnd: function () { appliquerOrdreCarte(); sauverOrdreCouches(); }
+            });
+        }
+    })();
 
     // ===== ÉTIQUETTES DES COUCHES (afficher / masquer par couche) =====
     // Les tooltips permanents portent la classe « lbl-c-<id> ». Masquer une
