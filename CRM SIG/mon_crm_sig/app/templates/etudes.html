@@ -205,6 +205,7 @@
                             <div>
                                 <h4 class="font-semibold text-slate-800 text-sm">Rapport APD_HTL</h4>
                                 <p class="text-xs text-slate-500">Document de synthèse (PDF)</p>
+                                <p id="rapport-folios-note" class="hidden mt-1 text-[11px] text-amber-600">⚠ Aucun folio créé — <a href="/projets/{{ projet.id }}/folios" class="font-semibold underline hover:text-amber-700">créez d'abord les folios &rarr;</a></p>
                             </div>
                         </div>
                         <button onclick="genererApd()" id="btn-rapport" class="inline-flex items-center justify-center gap-1.5 bg-brand-50 text-brand-700 border border-brand-200 hover:bg-brand-600 hover:text-white hover:border-brand-600 font-semibold text-xs py-1.5 px-3.5 rounded-lg shadow-sm transition-all active:scale-95">
@@ -974,6 +975,8 @@
 
     // ===== VERROU « MAJ Shapes » (après édition dans Édition Livrables) =====
     let shapesAMaj = {{ shapes_a_maj | tojson }};
+    // Verrou « Folios obligatoires » : sans folios manuels, le Plan APD est bloqué.
+    let sansFolios = {{ sans_folios | tojson }};
     // Toutes les générations SAUF la Cartographie SHP (btn-shape = « MAJ Shapes »).
     const AUTRES_BTNS = ['btn-doe_global', 'btn-rapport', 'btn-pds', 'btn-syno', 'btn-kmz',
         'btn-doe_fo_global', 'btn-doe_fo_vtl', 'btn-doe_fo_htl', 'btn-doe_fo_syno',
@@ -1002,11 +1005,29 @@
                 b.removeAttribute('title');
             }
         });
+        // La levée du verrou « MAJ Shapes » ne doit pas réactiver le Plan APD s'il
+        // manque des folios : on re-verrouille dans ce cas.
+        if (!actif && sansFolios) _verrouRapportFolios();
     }
 
-    // Applique le verrou au chargement si des modifications sont en attente.
+    // Verrou « Folios obligatoires » : désactive le Plan APD + affiche la note/lien.
+    function _verrouRapportFolios() {
+        if (!sansFolios) return;
+        const b = document.getElementById('btn-rapport');
+        if (b) {
+            b.disabled = true;
+            b.classList.add('btn-verrouille');
+            b.title = "Aucun folio : créez d'abord les folios livrables (page Folios) "
+                    + "pour générer le Plan livrable APD.";
+        }
+        const note = document.getElementById('rapport-folios-note');
+        if (note) note.classList.remove('hidden');
+    }
+
+    // Applique les verrous au chargement.
     document.addEventListener('DOMContentLoaded', function () {
         if (shapesAMaj) _appliquerEtatMajShapes(true);
+        else if (sansFolios) _verrouRapportFolios();
     });
 
     function genererEtude(type) {
@@ -1315,6 +1336,11 @@
             // SHP déjà à jour (verrou « MAJ Shapes » levé) : on n'écrase pas les éditions livrables.
             if (e.key === 'shape' && currentShpGenere && !shapesAMaj) {
                 _dosTerminer(i, 'déjà à jour');
+                continue;
+            }
+            // Sans folios manuels : le Plan APD (rapport) est EXCLU du dossier complet.
+            if (e.key === 'rapport' && sansFolios) {
+                _dosTerminer(i, 'aucun folio');
                 continue;
             }
             try {

@@ -226,6 +226,7 @@ def page_etudes(request: Request, projet_id: int, db: Session = Depends(get_db))
         "dossier_existant": dossier_existant,
         "shapes_a_maj": _shapes_a_maj(projet),
         "type_etude": _type_etude_projet(projet),
+        "sans_folios": _projet_sans_folios(projet),
     })
 
 
@@ -511,6 +512,11 @@ def _executer_tache(tache_id, projet_id, etapes, mode):
             if key == "shape" and nb > 1 and not _shapes_a_maj(projet) and _shp_livrable_existe(projet):
                 _maj_tache_etape(tache_id, i, "ignore", duree=0)
                 continue
+            # Sans folios manuels : le Plan APD (rapport) est EXCLU du dossier complet
+            # (le générer auto-générerait des folios non validés) — on n'échoue pas.
+            if key == "rapport" and nb > 1 and _projet_sans_folios(projet):
+                _maj_tache_etape(tache_id, i, "ignore", duree=0, raison="aucun folio")
+                continue
             # Acquisition FIFO du créneau : le plus petit seq (créé en premier) passe
             # en premier. Sinon -> « en attente » (temps d'attente compté à part).
             got = _gen_try_acquire(seq)
@@ -553,13 +559,15 @@ def _executer_tache(tache_id, projet_id, etapes, mode):
         db.close()
 
 
-def _maj_tache_etape(tache_id, i, statut, duree=None, resultat=None):
+def _maj_tache_etape(tache_id, i, statut, duree=None, resultat=None, raison=None):
     with _TACHES_LOCK:
         t = _TACHES.get(tache_id)
         if t:
             t["etapes"][i]["statut"] = statut
             if duree is not None:
                 t["etapes"][i]["duree_s"] = duree
+            if raison is not None:
+                t["etapes"][i]["raison"] = raison
             if resultat is not None:
                 t["resultat"] = resultat
 
@@ -1050,6 +1058,18 @@ def _folios_shp_projet(projet, dossier_shape):
         if os.path.exists(p):
             return p
     return None
+
+
+def _projet_sans_folios(projet, dossier_shape=None) -> bool:
+    """True si le projet n'a AUCUN folio créé manuellement (pas de FOLIO_LIVRABLES.shp
+    sur disque). Dans ce cas les folios seraient auto-générés (corridor) : on BLOQUE
+    le Plan livrable APD en unitaire et on l'EXCLUT du dossier complet."""
+    try:
+        if dossier_shape is None:
+            dossier_shape = _trouver_dossier_shape(projet)
+        return _folios_shp_projet(projet, dossier_shape) is None
+    except Exception:
+        return False   # en cas de doute, ne pas bloquer
 
 
 def _bbox_3857_vers_wgs(b):
@@ -2591,6 +2611,12 @@ def api_generer_etude(projet_id: int, type_etude: str, mode: str = "overwrite", 
             from app.reporting import apd_generator, apd_pptx, plan_generator
             import json as _json, glob as _glob
             dossier_shape = _trouver_dossier_shape(projet)
+            # Folios OBLIGATOIRES : sans folios manuels, le PDF auto-générerait un
+            # découpage non validé -> génération du Plan APD IMPOSSIBLE.
+            if _projet_sans_folios(projet, dossier_shape):
+                raise HTTPException(status_code=400,
+                    detail="Aucun folio livrable créé pour ce projet. Créez d'abord les "
+                           "folios (page Folios) avant de générer le Plan livrable APD.")
             natures = _natures_appuis_projet(projet, dossier_shape)
             defauts = apd_generator.calculer_synthese(
                 dossier_shape, ref_projet=(projet.reference or f"AFF_{projet.id}"),

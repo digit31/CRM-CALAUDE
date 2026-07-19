@@ -69,7 +69,7 @@
     if (multi && ets.length) {
       steps = '<div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 mt-3">' + ets.map(e => {
         const cls = e.statut === 'en_cours' ? 'text-amber-700 font-semibold' : e.statut === 'termine' ? 'text-slate-600' : e.statut === 'erreur' ? 'text-red-600' : e.statut === 'ignore' ? 'text-slate-400 line-through' : 'text-slate-400';
-        const dur = (e.duree_s != null && e.statut === 'termine') ? ' · ' + fmtDuree(e.duree_s) : (e.statut === 'ignore' ? ' (déjà à jour)' : '');
+        const dur = (e.duree_s != null && e.statut === 'termine') ? ' · ' + fmtDuree(e.duree_s) : (e.statut === 'ignore' ? ' (' + esc(e.raison || 'déjà à jour') + ')' : '');
         return '<div class="flex items-center gap-2 text-xs ' + cls + '">' + (STEP_IC[e.statut] || STEP_IC.en_attente) + '<span class="truncate">' + esc(e.label) + dur + '</span></div>';
       }).join('') + '</div>';
     }
