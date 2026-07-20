@@ -2251,7 +2251,7 @@ def api_propositions_nomenclature(projet_id: int, couche_id: int, db: Session = 
         raise HTTPException(status_code=404, detail="Couche non trouvée")
 
     objet = couche.nom.upper().replace("[LIVRABLE]", "").strip()
-    if objet not in ("SUPPORT", "PT", "CABLES"):
+    if objet not in nomenclature.COUCHES_NOMENCLATURE:
         return JSONResponse({"objet": objet, "nom": couche.nom, "propositions": []})
     try:
         gdf = gis_handler.lire_shapefile(couche.chemin_fichier)
@@ -2314,28 +2314,38 @@ async def api_appliquer_propositions(projet_id: int, couche_id: int, request: Re
     try:
         n = _appliquer(couche.chemin_fichier)
 
-        # Répercuter dans le SHP LIVRABLE (source de vérité PDS/KMZ) s'il existe.
-        # Les indices `ligne` proviennent du fichier édité ; on ne les réutilise
-        # sur le livrable QUE si l'alignement 1:1 tient encore (même nombre de
-        # lignes = même ordre). Sinon (ex. lignes supprimées côté livrable), on
-        # s'abstient pour ne pas écrire sur la mauvaise entité.
+        # Répercuter la correction sur les DEUX sources : l'INPUT (01_Inputs_SHP,
+        # source de l'export NETGEO 03.3) ET le SHP LIVRABLE (source PDS/KMZ),
+        # quelle que soit la couche éditée. Les indices `ligne` proviennent du
+        # fichier édité : on ne réécrit une cible QUE si l'alignement 1:1 tient
+        # encore (même nombre de lignes = même ordre), sinon on s'abstient pour ne
+        # pas viser la mauvaise entité.
+        from app.gis import nomenclature as _nomn
         projet = crm_service.obtenir_projet(db, projet_id)
         base = couche.nom.upper().replace("[LIVRABLE]", "").strip()
-        if projet and base in ("CABLES", "SUPPORT", "PT", "BPE", "BTS"):
-            p_liv = os.path.join(_trouver_dossier_shape(projet), f"{base}.shp")
-            if os.path.exists(p_liv) and os.path.abspath(p_liv) != os.path.abspath(couche.chemin_fichier):
+        if projet and base in _nomn.COUCHES_NOMENCLATURE:
+            cibles = [
+                os.path.join(projet.chemin_dossier, "01_Inputs_SHP", f"{base}.shp"),
+                os.path.join(_trouver_dossier_shape(projet), f"{base}.shp"),
+            ]
+            try:
+                n_src = len(gis_handler.lire_shapefile(couche.chemin_fichier))
+            except Exception:
+                n_src = None
+            for p_cible in cibles:
+                if (not os.path.exists(p_cible)
+                        or os.path.abspath(p_cible) == os.path.abspath(couche.chemin_fichier)):
+                    continue
                 try:
-                    n_src = len(gis_handler.lire_shapefile(couche.chemin_fichier))
-                    n_liv = len(gis_handler.lire_shapefile(p_liv))
-                    if n_src == n_liv:
-                        _appliquer(p_liv)
+                    n_cible = len(gis_handler.lire_shapefile(p_cible))
+                    if n_src is not None and n_src == n_cible:
+                        _appliquer(p_cible)
                     else:
-                        logger.warning(
-                            f"Répercussion nomenclature ignorée pour {base} : "
-                            f"alignement rompu ({n_src} lignes source vs {n_liv} livrable)."
-                        )
+                        logger.warning(f"Répercussion nomenclature ignorée pour {base} "
+                                       f"({os.path.basename(os.path.dirname(p_cible))}) : "
+                                       f"alignement rompu ({n_src} vs {n_cible}).")
                 except Exception as e:
-                    logger.warning(f"Répercussion nomenclature au livrable {base} échouée : {e}")
+                    logger.warning(f"Répercussion nomenclature {base} -> {p_cible} échouée : {e}")
 
         if n and projet:
             champs = sorted({str(ch.get("champ")) for ch in changements if ch.get("champ")})
@@ -2349,6 +2359,23 @@ async def api_appliquer_propositions(projet_id: int, couche_id: int, request: Re
     except Exception as e:
         logger.error(f"Erreur application propositions couche #{couche_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/projets/{projet_id}/couches-a-completer")
+def api_couches_a_completer(projet_id: int, livrable: int = 0, db: Session = Depends(get_db)):
+    """Liste des couches (des 7 couches NETGEO) ayant au moins une proposition de
+    nomenclature (champ vide à compléter OU valeur à corriger). Sert au bouton
+    « Corriger la nomenclature » (Carte ?nomenclature=1) après un blocage de
+    génération NETGEO. Par défaut : couches d'ENTRÉE (source de l'export)."""
+    projet = crm_service.obtenir_projet(db, projet_id)
+    if not projet:
+        raise HTTPException(status_code=404, detail="Projet non trouvé")
+    try:
+        couches = _couches_a_completer(projet, db, livrable=bool(livrable))
+    except Exception as e:
+        logger.error(f"Erreur couches-a-completer projet {projet_id}: {e}")
+        couches = []
+    return JSONResponse({"couches": couches, "nb": len(couches)})
 
 
 @app.get("/api/projets/{projet_id}/couches/{couche_id}/geojson")
@@ -2504,7 +2531,7 @@ def _couches_a_completer(projet, db, livrable=False):
         if est_liv != bool(livrable):
             continue
         base = nom.upper().replace("[LIVRABLE]", "").strip()
-        if base not in ("SUPPORT", "PT", "CABLES") or base in vus:
+        if base not in nomenclature.COUCHES_NOMENCLATURE or base in vus:
             continue
         try:
             chemin = _resoudre_shp_livrable(projet, c) if est_liv else c.chemin_fichier
@@ -2842,6 +2869,38 @@ def api_generer_etude(projet_id: int, type_etude: str, mode: str = "overwrite", 
                            "DOE FO (ou importez le fichier AAAAMMJJ-DATETVX.txt) avant de "
                            "générer. Elle remplit automatiquement DATE_DE_CR / POSE / "
                            "DATE_CREAT (aaaammjj) sur tous les SHP livrables.")
+
+            # 0) VALIDATION NOMENCLATURE (BLOQUANTE) : on refuse de générer le dossier
+            #    NETGEO tant qu'une valeur PRÉSENTE est hors liste / hors format, ou
+            #    qu'un champ OBLIGATOIRE est vide, dans les SHP d'entrée (source de
+            #    l'export 03.3_Shapes). Le message liste précisément les corrections à
+            #    faire — via le modal « Nomenclature » de la Carte — puis on relance.
+            from app.gis import nomenclature as _nomn
+            anomalies = []
+            for base in _nomn.COUCHES_NOMENCLATURE:
+                p_shp = os.path.join(dossier_input, f"{base}.shp")
+                if not os.path.exists(p_shp):
+                    continue
+                try:
+                    g_val = gis_handler.lire_shapefile(p_shp)
+                except Exception:
+                    continue
+                for a in _nomn.valider_couche(g_val, base):
+                    anomalies.append((base, a))
+            if anomalies:
+                lignes = [
+                    f"- {b} L{a['ligne']} / {a['champ']} "
+                    + (f": « {a['valeur']} » " if a['valeur'] not in (None, "") else "(vide) ")
+                    + f"-> {a['raison']}"
+                    for (b, a) in anomalies[:25]
+                ]
+                reste = len(anomalies) - 25
+                if reste > 0:
+                    lignes.append(f"... et {reste} autre(s) anomalie(s).")
+                detail = ("Nomenclature NETGEO non conforme : generation bloquee. "
+                          f"Corrigez ces {len(anomalies)} valeur(s) dans le modal Nomenclature "
+                          "de la Carte, puis relancez.\n" + "\n".join(lignes))
+                raise HTTPException(status_code=400, detail=detail)
 
             # 1) SHP LIVRABLES (schéma NETGEO) — source de vérité. On NE force PAS
             #    l'écrasement (overwrite=False) : les livrables existants (et leurs

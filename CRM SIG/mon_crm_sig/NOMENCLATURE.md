@@ -1,9 +1,26 @@
 # NOMENCLATURE — Proposition automatique de valeurs (NETGEO)
 
-> **But** : à chaque **ajout d'un projet** (import de couches), lorsqu'un **SUPPORT**, un **PT** ou un **CÂBLE** a un **NOM / CODE vide** ou des **champs vides**, l'application **PROPOSE** une valeur conforme à la nomenclature client (Free Mobile / Orange NETGEO). L'utilisateur valide ou corrige — rien n'est écrit sans validation.
+> **But** : sur les **7 couches NETGEO** (`BPE, CABLES, SUPPORT, PT, BTS, NRA, NRO_RIP`), lorsqu'un champ est **vide** ou porte une **valeur non conforme**, l'application **PROPOSE** une valeur conforme à la nomenclature client (Free Mobile / Orange NETGEO) dans le **modal Nomenclature** de la Carte. L'utilisateur valide ou corrige — **rien n'est écrit sans validation**.
 >
 > Source : *listes de valeurs NETGEO v16 (2024‑04)* — « LISTE DES CHAMPS ATTRIBUTAIRES POUR EXPORT SHAPEFILE ».
-> Ce fichier est une **référence de compréhension** ; il ne modifie pas le code.
+
+---
+
+## Mise en œuvre dans le CRM (`app/gis/nomenclature.py`)
+
+Les règles ci‑dessous sont **encodées** dans la structure `NOMENCLATURE = {couche: {champ: {defaut, liste, fmt, oblig, …}}}` (les 7 couches, avec les **noms de colonnes réels** du gabarit livrable). Deux fonctions l'exploitent :
+
+- **`proposer_couche(gdf, objet)`** → liste de propositions affichées dans le modal :
+  champ **vide** → valeur par défaut (pré‑cochée si sûre) ou « à saisir » ; **NOM/CODE/LIBELLE**
+  incrémentés ; valeur **présente hors liste/format** → correction proposée ; **doublon** de
+  nommage → variante unique ; **normalisation** MAJUSCULE/accents/trim.
+- **`valider_couche(gdf, objet)`** → liste d'**anomalies bloquantes**. Appelée **avant la génération du Dossier NETGEO** (`doe_fo_netgeo`) : s'il reste ≥ 1 anomalie (champ obligatoire vide, valeur hors liste fermée, format invalide, doublon), la génération est **bloquée en HTTP 400** avec la liste précise → l'utilisateur corrige via le modal (lien « Corriger la nomenclature » → `?nomenclature=1`) puis relance.
+
+**Champs recalculés à la génération** (`POSE`, `DATE_DE_CR` ← date TVX ; `DATE_CREAT` ← placeholder) :
+ignorés par la validation (`derive=True`) — leur valeur d'entrée est écrasée. Les corrections
+appliquées sont répercutées sur **l'input** (source de l'export 03.3) **et** le **SHP livrable**
+(source PDS/KMZ). Les champs **PROPRIETAI/GESTIONNAI ouverts** (SUPPORT/PT/BTS : FT/PRIVE/OP TIERS)
+et **PT.TYPE_STRUC** (COFFRET, EGOUT…) sont **suggérés mais non bloquants**.
 
 ---
 

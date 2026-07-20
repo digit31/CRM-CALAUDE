@@ -46,6 +46,27 @@ def generer(pid, typ, timeout=240):
     try: d = r.json()
     except: d = {}
     return r.status_code, (d.get("message") or d.get("detail") or "")[:150]
+def appliquer_nomenclature(pid):
+    """Simule l'utilisateur dans le modal Nomenclature : récupère les couches à
+    compléter/corriger, applique TOUTES les propositions ayant une valeur.
+    Renvoie le nombre total de valeurs appliquées."""
+    try:
+        cs = requests.get(f"{B}/api/projets/{pid}/couches-a-completer", timeout=30).json().get("couches", [])
+    except Exception:
+        cs = []
+    total = 0
+    for c in cs:
+        try:
+            props = requests.get(f"{B}/api/projets/{pid}/couches/{c['id']}/propositions", timeout=30).json().get("propositions", [])
+            chgs = [{"ligne": p["ligne"], "champ": p["champ"], "valeur": p["proposee"]}
+                    for p in props if p.get("proposee") not in (None, "")]
+            if chgs:
+                r = requests.post(f"{B}/api/projets/{pid}/couches/{c['id']}/appliquer-propositions",
+                                  json={"propositions": chgs}, timeout=60)
+                total += r.json().get("nb", 0)
+        except Exception:
+            pass
+    return total
 def supprimer(pid, ch):
     try: requests.delete(f"{B}/api/projets/{pid}", timeout=20)
     except: pass
@@ -109,17 +130,26 @@ def main():
     st, msg = generer(pid, "rapport")
     rec("faute", "S2 Plan APD sans folios", "bloqué 400 + msg folio", st == 400 and "folio" in msg.lower(), f"{st} | {msg[:50]}")
 
-    # ===== S3 DOE FO nominal + CONTENU + SCHÉMA =====
-    print("\n=== S3 DOE FO nominal + contenu NETGEO + schéma ===")
+    # ===== S3 DOE FO : nomenclature bloquante -> correction -> génération =====
+    print("\n=== S3 DOE FO : blocage nomenclature -> correction -> nominal + contenu ===")
     pid2, ch2 = creer("ZZ_TEST_DOE", "DOE FO"); projets.append((pid2, ch2))
     importer(pid2, src, avec_txt=True)
     date_tvx = "20260414"
+    # Date TVX posée d'abord : le blocage suivant doit porter sur la NOMENCLATURE (pas la date).
+    requests.post(f"{B}/api/projets/{pid2}/doe-fo", json={"date_tvx": date_tvx}, timeout=15)
+    # S3a FAUTE : entrée non conforme (EMPRISE sans _001, CODE vide, doublon…) -> BLOQUÉ
+    st, msg = generer(pid2, "doe_fo_netgeo")
+    rec("faute", "S3 NETGEO bloqué si nomenclature non conforme",
+        "bloqué 400 + msg nomenclature", st == 400 and "nomenclature" in msg.lower(), f"{st} | {msg[:55]}")
+    # S3b : on applique la nomenclature (comme dans le modal) puis on renseigne le FCI
+    nb_nom = appliquer_nomenclature(pid2)
     cab_in = gpd.read_file(os.path.join(ch2, "01_Inputs_SHP", "CABLES.shp"))
     fci_noms = [str(x) for x in cab_in["NOM"].tolist()[:2] if str(x) not in ("nan", "None", "")]
     requests.post(f"{B}/api/projets/{pid2}/doe-fo", json={"date_tvx": date_tvx, "fci": {n: "FCI-TEST" for n in fci_noms}}, timeout=15)
     st, msg = generer(pid2, "doe_fo_netgeo")
     ng = glob.glob(os.path.join(ch2, "**", "03.3_Shapes", "**", "CABLES.shp"), recursive=True)
-    rec("nominal", "S3 Dossier NETGEO", "SHP NETGEO", st == 200 and ng, f"{st} / {len(ng)} CABLES NETGEO")
+    rec("nominal", "S3 Dossier NETGEO (après nomenclature)", "SHP NETGEO",
+        st == 200 and ng, f"{st} / {len(ng)} CABLES NETGEO ({nb_nom} corrections)")
     # CONTENU NETGEO : FCI + POSE (date TVX) appliqués ligne par ligne
     if ng:
         gc = gpd.read_file(ng[0])

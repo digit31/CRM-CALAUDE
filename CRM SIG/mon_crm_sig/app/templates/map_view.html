@@ -382,12 +382,15 @@
             </div>
             <div>
                 <h3 class="text-base font-bold text-slate-800">Compléter la nomenclature</h3>
-                <p class="text-xs text-slate-500">Propositions conformes NETGEO pour les champs vides (SUPPORT / PT / CÂBLES).</p>
+                <p class="text-xs text-slate-500">Propositions conformes NETGEO (7 couches) — champs vides à compléter &amp; valeurs à corriger.</p>
             </div>
         </div>
         <div id="nomen-contenu" class="p-5 space-y-5 overflow-y-auto text-sm text-slate-600"></div>
         <div class="p-4 border-t border-slate-100 bg-slate-50 flex justify-between items-center">
-            <span id="nomen-info" class="text-xs text-slate-400"></span>
+            <div class="flex items-center gap-3">
+                <span id="nomen-info" class="text-xs text-slate-400"></span>
+                <button type="button" onclick="toutCocherNomenclature()" class="text-[11px] font-semibold text-brand-600 hover:text-brand-700 underline">Tout cocher / décocher</button>
+            </div>
             <div class="flex gap-2">
                 <button onclick="ignorerNomenclature()" class="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 transition">Ignorer</button>
                 <button id="btn-nomen-appliquer" onclick="appliquerNomenclature()" class="px-4 py-2 text-xs font-semibold bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition shadow-sm">Appliquer les propositions</button>
@@ -985,6 +988,17 @@
     function ignorerNomenclature() {
         suiteApresNomenclature();
     }
+    // Coche / décoche toutes les lignes ayant une valeur proposée (les « à saisir »
+    // vides restent décochées : on ne peut pas les appliquer telles quelles).
+    function toutCocherNomenclature() {
+        const cont = document.getElementById('nomen-contenu');
+        const lignes = [...cont.querySelectorAll('tr[data-ligne]')].filter(tr => {
+            const val = tr.querySelector('.nomen-val');
+            return val && val.value.trim();
+        });
+        const tout = lignes.every(tr => tr.querySelector('.nomen-chk').checked);
+        lignes.forEach(tr => { tr.querySelector('.nomen-chk').checked = !tout; });
+    }
     function appliquerNomenclature() {
         const btn = document.getElementById('btn-nomen-appliquer');
         btn.disabled = true; btn.textContent = 'Application…';
@@ -1581,6 +1595,22 @@
             sessionStorage.removeItem('open_nomenclature');
             const couches = JSON.parse(rawNom);
             if (couches && couches.length) setTimeout(() => ouvrirNomenclature(couches), 400);
+        }
+    } catch (e) {}
+
+    // Arrivée avec ?nomenclature=1 (bouton « Corriger la nomenclature » après un
+    // blocage de génération NETGEO) : on récupère les couches à compléter/corriger
+    // et on ouvre le modal directement.
+    try {
+        if (new URLSearchParams(location.search).get('nomenclature') === '1') {
+            fetch('/api/projets/' + projetId + '/couches-a-completer')
+                .then(r => r.json())
+                .then(d => {
+                    const couches = (d && d.couches) || [];
+                    if (couches.length) setTimeout(() => ouvrirNomenclature(couches), 400);
+                    else alert('Aucune couche à corriger : la nomenclature est conforme.');
+                })
+                .catch(() => {});
         }
     } catch (e) {}
 </script>
