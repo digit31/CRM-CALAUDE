@@ -148,22 +148,28 @@ def page_carte(request: Request, projet_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Projet non trouvé")
     
     shp_genere = any(c.nom.startswith("[Livrable]") for c in projet.couches)
-    # Affichage carte : couches INPUT tant qu'aucun livrable n'existe ; dès que le
-    # SHP livrable d'une couche est généré, on affiche la version « Édition
-    # Livrables » (source de vérité) à sa place — supprime le doublon
-    # input/livrable. Une couche input SANS jumeau livrable reste affichée
-    # (aucune donnée perdue).
+    # Affichage carte : on montre TOUTES les couches — les LIVRABLES (source de
+    # vérité) ET les couches d'ENTRÉE (input), même après génération, pour que
+    # l'utilisateur garde l'accès aux données brutes (comparaison input/livrable).
+    # Une couche input dont le livrable existe est marquée « doublon d'entrée » :
+    # badge « entrée », placée en fin de liste et DÉCOCHÉE par défaut sur la carte
+    # (géométrie identique au livrable -> pas de doublon visuel), mais sa table
+    # attributaire reste consultable.
     bases_liv = _bases_livrables(projet)
 
-    def _affichee(c):
+    def _est_input_doublon(c):
         if (c.nom or "").strip().lower().startswith("[livrable]"):
-            return True  # les livrables (source de vérité) sont toujours affichés
+            return False
         base = (c.nom or "").upper().replace("[LIVRABLE]", "").strip()
-        return base not in bases_liv  # input affiché seulement sans jumeau livrable
+        return base in bases_liv
 
-    couches_affichees = [c for c in projet.couches if _affichee(c)]
-    # Ordre d'affichage réglé par glisser-déposer (persiste par projet).
-    couches_affichees = _trier_couches_par_ordre(couches_affichees, _couches_ordre_projet(projet))
+    # Ordre réglé par glisser-déposer (persiste par projet), puis les couches
+    # d'entrée en doublon regroupées en fin de liste.
+    couches_ordonnees = _trier_couches_par_ordre(list(projet.couches), _couches_ordre_projet(projet))
+    couches_input_doublon = [c.id for c in couches_ordonnees if _est_input_doublon(c)]
+    _set_input = set(couches_input_doublon)
+    couches_affichees = ([c for c in couches_ordonnees if c.id not in _set_input]
+                         + [c for c in couches_ordonnees if c.id in _set_input])
     # Quelles couches portent les étiquettes (une seule par base : livrable si
     # présent, sinon input) — pour n'afficher le bouton toggle que là où il agit.
     couches_etiquettes = {
@@ -175,6 +181,7 @@ def page_carte(request: Request, projet_id: int, db: Session = Depends(get_db)):
         "shp_genere": shp_genere,
         "couches_affichees": couches_affichees,
         "couches_etiquettes": couches_etiquettes,
+        "couches_input_doublon": couches_input_doublon,
         "fond_opacite": _fond_opacite_projet(projet),
         "type_etude": _type_etude_projet(projet),
     })
